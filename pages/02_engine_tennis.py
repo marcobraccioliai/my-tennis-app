@@ -24,12 +24,15 @@ prob_stimata = st.slider("Tua Probabilità stimata", 0.0, 1.0, 0.5)
 
 if st.button("🚀 SIMULA MATCH"):
     try:
-        parts = input_match.split(',')
-        p1_name, p1_quota = parts[0].split(':')
-        p2_name, p2_quota = parts[1].split(':')
+        # Usiamo il punto e virgola per separare i giocatori
+        parts = input_match.split(';') 
+        
+        # Estraiamo nome e quota separando dall'ultima occorrenza di ':'
+        p1_name, p1_quota = parts[0].rsplit(':', 1)
+        p2_name, p2_quota = parts[1].rsplit(':', 1)
         
         q1, q2 = float(p1_quota), float(p2_quota)
-        
+                
         # Simulazione Monte Carlo (Bernoulliana)
         n_sim = 200000
         rng = np.random.default_rng()
