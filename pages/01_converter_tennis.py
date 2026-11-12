@@ -2,12 +2,23 @@ import streamlit as st
 
 st.set_page_config(page_title="Parser Tennis", layout="centered")
 
-# Stile identico alla versione ippica per coerenza visiva
+# Stile grafico coerente
 st.markdown("""
     <style>
+    /* Sfondo pagina */
     [data-testid="stAppViewContainer"] { background-color: #B20000 !important; }
+    
+    /* Titoli e testo principale */
     .stApp div[data-testid="stMarkdownContainer"], .stApp label, .stApp h1, .stApp h2, .stApp h3 { color: #FFFDD0 !important; }
-    .stButton button { color: #000000 !important; background-color: #FFFDD0 !important; }
+    
+    /* Sidebar */
+    [data-testid="stSidebar"] { background-color: #F0F2F6 !important; }
+    
+    /* TESTO SIDEBAR (Qui stava il problema) */
+    [data-testid="stSidebar"] div, [data-testid="stSidebar"] span, [data-testid="stSidebar"] a {
+        color: #000000 !important;
+        font-weight: bold;
+    }
     </style>
 """, unsafe_allow_html=True)
 
