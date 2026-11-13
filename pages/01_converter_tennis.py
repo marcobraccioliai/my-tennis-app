@@ -10,7 +10,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🎾 Converter Quote Tennis")
+st.title("✂️ Converter Quote Tennis")
 raw_text = st.text_area("Incolla blocco match SNAI:", height=200)
 
 if st.button("🚀 CONVERTI MATCH"):
@@ -19,23 +19,18 @@ if st.button("🚀 CONVERTI MATCH"):
     odds = []
     
     for line in lines:
-        # 1. Ignora righe con date o orari (contengono / o : e sono brevi)
-        if any(char in line for char in ["/", ":"]):
-            continue
-            
-        # 2. Se ha un punto è una quota
-        if "." in line:
-            try:
-                odds.append(float(line.replace(',', '.')))
-            except:
-                pass
-        # 3. Se ha lettere è un giocatore
-        elif any(c.isalpha() for c in line):
+        if any(char in line for char in ["/", ":"]): continue
+        if any(c.isalpha() for c in line):
             players.append(line)
+        elif "." in line:
+            try:
+                odds.append(line.replace(',', '.'))
+            except:
+                continue
             
-    # Prendiamo solo i primi 2 nomi e le prime 2 quote
     if len(players) >= 2 and len(odds) >= 2:
-        output = f"{players[0]}:{odds[0]}, {players[1]}:{odds[1]}"
+        # Usa il punto e virgola come separatore per essere compatibile col motore
+        output = f"{players[0]}:{odds[0]}; {players[1]}:{odds[1]}"
         st.code(output)
     else:
-        st.error(f"Dati non estratti. Nomi: {len(players)}, Quote: {len(odds)}. Verifica input.")
+        st.error(f"Dati non estratti. Nomi: {len(players)}, Quote: {len(odds)}.")
