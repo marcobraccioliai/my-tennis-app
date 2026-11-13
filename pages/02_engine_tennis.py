@@ -42,13 +42,18 @@ if st.button("🚀 SIMULA MATCH"):
             roi = (prob_simulata * q1) - 1
             
             if roi > 0:
+                # Calcolo Edge (Differenza tra probabilità simulata e implicita del banco)
+                prob_implicita_banco = 1/q1
+                edge = prob_simulata - prob_implicita_banco
+                
                 puntata = min(np.floor((roi / (q1 - 1)) * budget * kelly_fraction), 10.0)
+                
                 if puntata >= 2:
-                    st.success(f"**PUNTA su {p1_name.strip()}**: {int(puntata)}€ (ROI {roi:.1%})")
+                    st.success(f"**PUNTA su {p1_name.strip()}**: {int(puntata)}€")
+                    st.write(f"📈 ROI: {roi:.1%}")
+                    st.write(f"🎯 EDGE: {edge:.1%}") # <--- Ecco dove appare!
                 else:
-                    st.warning(f"Valore trovato (ROI {roi:.1%}), ma puntata sotto il minimo di 2€.")
-            else:
-                st.error("Nessun valore trovato.")
+                    st.warning(f"Valore trovato (ROI {roi:.1%}, Edge {edge:.1%}), ma puntata sotto il minimo di 2€.")
             
     except Exception as e:
         st.error(f"Errore: {e}")
