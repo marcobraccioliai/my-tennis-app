@@ -1,29 +1,18 @@
-import requests
-from bs4 import BeautifulSoup
-import time
+import streamlit as st
 
-def fetch_player_stats(player_url):
-    # 1. Simulazione comportamento umano
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
-    
-    # 2. Pausa di sicurezza (sempre necessaria per non essere bannati)
-    time.sleep(3) 
-    
-    try:
-        response = requests.get(player_url, headers=headers)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # Esempio di estrazione (va adattato alla struttura HTML specifica di TennisExplorer)
-        # Qui dobbiamo poi definire i tag precisi (es: classe 'stats-table')
-        # Per ora verifichiamo solo la connessione
-        return f"Connessione riuscita. Titolo pagina: {soup.title.string}"
-        
-    except Exception as e:
-        return f"Errore: {e}"
+st.set_page_config(page_title="Data Fetcher", layout="centered")
 
-# Esempio di utilizzo:
-# url = "https://www.tennisexplorer.com/player/nome-giocatore/"
-# print(fetch_player_stats(url))
+# Stile (va inserito in ogni pagina per ora)
+st.markdown("""
+    <style>
+    [data-testid="stAppViewContainer"] { background-color: #B20000 !important; }
+    .stApp div[data-testid="stMarkdownContainer"], .stApp label, .stApp h1, .stApp h2, .stApp h3 { color: #FFFDD0 !important; }
+    </style>
+""", unsafe_allow_html=True)
+
+st.title("📡 Data Fetcher")
+st.write("Questa pagina è attiva.")
+
+# Test di presenza
+if st.button("Verifica connessione"):
+    st.write("Il modulo è attivo e pronto a ricevere le funzioni di scraping.")
