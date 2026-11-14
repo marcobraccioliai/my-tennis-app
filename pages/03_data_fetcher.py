@@ -19,15 +19,36 @@ def extract_surface_stats(url):
     response = requests.get(url, headers=headers)
     soup = BeautifulSoup(response.text, 'html.parser')
     
-    # DEBUG: Stampiamo a video le tabelle trovate
-    st.write("Debug: Analizzo le tabelle trovate...")
-    tables = soup.find_all('table')
+    # Cerchiamo la tabella che contiene "Year Summary"
+    target_table = None
+    for table in soup.find_all('table'):
+        if "Year Summary" in table.text:
+            target_table = table
+            break
+            
+    if not target_table: return None
     
-    # Mostriamo i primi 200 caratteri di ogni tabella per capire quale sia quella giusta
-    for i, table in enumerate(tables):
-        st.write(f"Tabella {i}: {table.text[:100]}...")
-        
-    return None # Per ora non restituiamo nulla
+    # Cerchiamo la riga che inizia con "Summary:"
+    rows = target_table.find_all('tr')
+    for row in rows:
+        if "Summary:" in row.text:
+            # Puliamo la stringa: "Summary: 465/138 119/46 183/51 111/27 40/13 12/1"
+            raw = row.text.replace("Summary:", "").strip()
+            parts = raw.split() # Separa i blocchi V/P
+            
+            # parts[0] è il totale, parts[1] Clay, parts[2] Hard, etc.
+            # Convertiamo in Win Rate %: Vinte / (Vinte + Perse)
+            def calc_win_rate(vp_str):
+                v, p = map(int, vp_str.split('/'))
+                return (v / (v + p)) * 100 if (v + p) > 0 else 0
+            
+            return {
+                "Clay": calc_win_rate(parts[1]),
+                "Hard": calc_win_rate(parts[2]),
+                "Indoors": calc_win_rate(parts[3]),
+                "Grass": calc_win_rate(parts[4])
+            }
+    return None
 
 url1 = st.text_input("URL Giocatore 1")
 url2 = st.text_input("URL Giocatore 2")
