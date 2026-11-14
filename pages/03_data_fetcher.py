@@ -19,26 +19,15 @@ def extract_surface_stats(url):
     response = requests.get(url, headers=headers)
     soup = BeautifulSoup(response.text, 'html.parser')
     
-    # Cerchiamo la tabella che contiene le statistiche per superficie
-    # In TennisExplorer solitamente è una tabella con header 'Surface'
-    stats = {"Hard": 0.0, "Clay": 0.0, "Grass": 0.0, "Carpet": 0.0}
+    # DEBUG: Stampiamo a video le tabelle trovate
+    st.write("Debug: Analizzo le tabelle trovate...")
+    tables = soup.find_all('table')
     
-    try:
-        tables = soup.find_all('table', {'class': 'table-bordered'})
-        for table in tables:
-            if 'Surface' in table.text:
-                rows = table.find_all('tr')
-                for row in rows:
-                    cells = row.find_all('td')
-                    if len(cells) > 1:
-                        surface = cells[0].text.strip()
-                        if surface in stats:
-                            # Estrae la percentuale dalla cella (es: 75%)
-                            pct_text = cells[1].text.strip().replace('%', '')
-                            stats[surface] = float(pct_text)
-        return stats
-    except:
-        return None
+    # Mostriamo i primi 200 caratteri di ogni tabella per capire quale sia quella giusta
+    for i, table in enumerate(tables):
+        st.write(f"Tabella {i}: {table.text[:100]}...")
+        
+    return None # Per ora non restituiamo nulla
 
 url1 = st.text_input("URL Giocatore 1")
 url2 = st.text_input("URL Giocatore 2")
