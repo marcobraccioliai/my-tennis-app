@@ -3,7 +3,7 @@ import numpy as np
 
 st.set_page_config(page_title="Converter & Monte Carlo Tennis", layout="centered")
 
-# Stile grafico corretto: contrasti perfetti su tutti i componenti
+# Stile grafico blindato e pulito
 st.markdown("""
     <style>
     /* Sfondo principale dell'app (Rosso) */
@@ -11,48 +11,34 @@ st.markdown("""
         background-color: #B20000 !important; 
     }
     
-    /* Titoli e testi su sfondo rosso */
+    /* Titoli e testi generali */
     .stApp div[data-testid="stMarkdownContainer"] h1, 
     .stApp div[data-testid="stMarkdownContainer"] h2, 
     .stApp div[data-testid="stMarkdownContainer"] h3, 
     .stApp div[data-testid="stMarkdownContainer"] p,
-    .stApp label,
-    [data-testid="stMetricLabel"] p,
-    [data-testid="stMetricValue"] div { 
+    .stApp label { 
         color: #FFFDD0 !important; 
     }
     
-    /* 1. PULSANTE PRINCIPALE (Testo nero su sfondo crema) */
+    /* Pulsante principale */
     .stButton button, .stButton button p { 
         color: #000000 !important; 
         background-color: #FFFDD0 !important; 
         font-weight: bold !important; 
     }
     
-    /* 2. BOX DI SUCCESSO / ERRORE (Frecce rosse: testo nero su sfondo chiaro) */
-    [data-testid="stAlert"] p, [data-testid="stAlert"] div {
-        color: #000000 !important;
-        font-weight: bold !important;
-    }
-
-    /* 3. BADGE QUOTA EQUA NELLE METRICHE (Testo verde scuro su sfondo chiaro) */
-    [data-testid="stMetricDelta"] div {
-        color: #09ab3b !important;
-        font-weight: bold !important;
-    }
-
-    /* 4. NOMI GIOCATORI EVIDENZIATI (Codice inline) */
-    code {
-        color: #B20000 !important;
-        background-color: #FFFDD0 !important;
-        font-weight: bold !important;
-    }
-    
-    /* 5. CASELLA DI TESTO COPIA-INCOLLA */
+    /* Casella di testo copia-incolla (Testo nero su sfondo bianco) */
     [data-testid="stTextArea"] textarea {
         color: #000000 !important;
         background-color: #FFFFFF !important;
         -webkit-text-fill-color: #000000 !important;
+    }
+
+    /* Nomi giocatori evidenziati */
+    code {
+        color: #B20000 !important;
+        background-color: #FFFDD0 !important;
+        font-weight: bold !important;
     }
 
     /* Personalizzazione della Sidebar */
@@ -145,7 +131,13 @@ if st.button("🚀 CONVERTI & SIMULA MATCH"):
         odd_1 = float(odds[0])
         odd_2 = float(odds[1])
         
-        st.success(f"Match rilevato: **{p1_name}** vs **{p2_name}**")
+        # Box HTML personalizzato per il match rilevato (Perfettamente leggibile)
+        st.markdown(f"""
+            <div style="background-color: #1E1E1E; padding: 12px; border-radius: 8px; border: 2px solid #FFFDD0; margin-bottom: 15px;">
+                <span style="color: #FFFDD0; font-size: 16px; font-weight: bold;">🎾 Match Rilevato: {p1_name} vs {p2_name}</span>
+            </div>
+        """, unsafe_allow_html=True)
+        
         st.write(f"Quote SNAI: `{p1_name}` @ **{odd_1}** | `{p2_name}` @ **{odd_2}**")
         
         with st.spinner("⚙️ Esecuzione di 200.000 simulazioni Monte Carlo in corso..."):
@@ -160,21 +152,36 @@ if st.button("🚀 CONVERTI & SIMULA MATCH"):
             fair_odd_2 = 100 / prob_2 if prob_2 > 0 else 0
             
         col1, col2 = st.columns(2)
+        
         with col1:
-            st.metric(label=f"Prob. {p1_name}", value=f"{prob_1:.1f}%", delta=f"Quota Equa: {fair_odd_1:.2f}")
+            st.markdown(f"""
+                <div style="background-color: #1E1E1E; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #FFFDD0;">
+                    <p style="color: #FFFDD0; margin: 0; font-size: 14px;">Prob. {p1_name}</p>
+                    <h2 style="color: #FFFDD0; margin: 5px 0; font-size: 32px;">{prob_1:.1f}%</h2>
+                    <p style="color: #00FF7F; margin: 0; font-weight: bold;">Quota Equa: {fair_odd_1:.2f}</p>
+                </div>
+            """, unsafe_allow_html=True)
+            
             st.write(f"Quota SNAI: **{odd_1}**")
             if odd_1 > fair_odd_1:
-                st.success("🔥 VALUE BET TROVATA!")
+                st.markdown('<p style="color: #00FF7F; font-weight: bold; font-size: 18px;">🔥 VALUE BET TROVATA!</p>', unsafe_allow_html=True)
             else:
-                st.write("❌ No Value")
+                st.markdown('<p style="color: #FFA07A; font-weight: bold;">❌ No Value</p>', unsafe_allow_html=True)
                 
         with col2:
-            st.metric(label=f"Prob. {p2_name}", value=f"{prob_2:.1f}%", delta=f"Quota Equa: {fair_odd_2:.2f}")
+            st.markdown(f"""
+                <div style="background-color: #1E1E1E; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #FFFDD0;">
+                    <p style="color: #FFFDD0; margin: 0; font-size: 14px;">Prob. {p2_name}</p>
+                    <h2 style="color: #FFFDD0; margin: 5px 0; font-size: 32px;">{prob_2:.1f}%</h2>
+                    <p style="color: #00FF7F; margin: 0; font-weight: bold;">Quota Equa: {fair_odd_2:.2f}</p>
+                </div>
+            """, unsafe_allow_html=True)
+            
             st.write(f"Quota SNAI: **{odd_2}**")
             if odd_2 > fair_odd_2:
-                st.success("🔥 VALUE BET TROVATA!")
+                st.markdown('<p style="color: #00FF7F; font-weight: bold; font-size: 18px;">🔥 VALUE BET TROVATA!</p>', unsafe_allow_html=True)
             else:
-                st.write("❌ No Value")
+                st.markdown('<p style="color: #FFA07A; font-weight: bold;">❌ No Value</p>', unsafe_allow_html=True)
                 
     else:
         st.error(f"Dati non estratti correttamente. Nomi: {len(players)}, Quote: {len(odds)}. Controlla il testo incollato.")
