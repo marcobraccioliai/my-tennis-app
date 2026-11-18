@@ -1,10 +1,12 @@
 import streamlit as st
 import numpy as np
+import pandas as pd
 import requests
 import csv
 import io
+from datetime import datetime
 
-st.set_page_config(page_title="Pro Value Betting & Monte Carlo (Sackmann Edition)", layout="centered")
+st.set_page_config(page_title="Pro Value Betting - Batch Scanner", layout="centered")
 
 # Stile grafico blindato e pulito
 st.markdown("""
@@ -15,7 +17,11 @@ st.markdown("""
     .stApp div[data-testid="stMarkdownContainer"] h3, 
     .stApp div[data-testid="stMarkdownContainer"] p,
     .stApp label { color: #FFFDD0 !important; }
-    .stButton button, .stButton button p { color: #000000 !important; background-color: #FFFDD0 !important; font-weight: bold !important; }
+    .stButton button, .stButton button p, [data-testid="stDownloadButton"] button, [data-testid="stDownloadButton"] button p { 
+        color: #000000 !important; 
+        background-color: #FFFDD0 !important; 
+        font-weight: bold !important; 
+    }
     [data-testid="stTextArea"] textarea, [data-testid="stNumberInput"] input { 
         color: #000000 !important; 
         background-color: #FFFFFF !important; 
@@ -29,18 +35,22 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🎾 Pro Value Betting & Monte Carlo")
+st.title("🎾 Pro Value Betting - Batch Scanner")
 
 # --- PANNELLO CONFIGURAZIONE RAPIDA ---
 col_cfg1, col_cfg2 = st.columns(2)
 with col_cfg1:
     bankroll = st.number_input("💰 Il tuo Bankroll (€):", min_value=10.0, value=1000.0, step=50.0)
 with col_cfg2:
-    superficie = st.radio("🏟️ Superficie del match:", ["Cemento", "Terra Battuta", "Erba"], horizontal=True)
+    superficie = st.radio("🏟️ Superficie del torneo:", ["Cemento", "Terra Battuta", "Erba"], horizontal=True)
 
-raw_text = st.text_area("Incolla blocco match SNAI:", height=140)
+raw_text = st.text_area(
+    "Incolla l'intero blocco match SNAI del torneo:", 
+    height=200, 
+    placeholder="Incolla qui tutte le partite copiate dal palinsesto SNAI..."
+)
 
-# --- 📚 DATABASE LOCALE DI SUPPORTO ---
+# --- 📚 DATABASE LOCALE DI SUPPORTO (ATP & WTA) ---
 DATABASE_TENNISTI = {
     "sinner": {"serv": 0.70, "ret": 0.43, "bonus": {"Cemento": 0.015, "Terra Battuta": 0.00, "Erba": 0.01}},
     "alcaraz": {"serv": 0.69, "ret": 0.44, "bonus": {"Cemento": 0.005, "Terra Battuta": 0.015, "Erba": 0.015}},
@@ -55,73 +65,72 @@ DATABASE_TENNISTI = {
     "darderi": {"serv": 0.64, "ret": 0.39, "bonus": {"Cemento": -0.015, "Terra Battuta": 0.025, "Erba": -0.02}},
     "tiafoe": {"serv": 0.66, "ret": 0.37, "bonus": {"Cemento": 0.015, "Terra Battuta": -0.015, "Erba": 0.005}},
     "prizmic": {"serv": 0.65, "ret": 0.38, "bonus": {"Cemento": 0.005, "Terra Battuta": 0.01, "Erba": -0.01}},
-    "moroni": {"serv": 0.60, "ret": 0.35, "bonus": {"Cemento": -0.01, "Terra Battuta": 0.015, "Erba": -0.015}}
+    "moroni": {"serv": 0.60, "ret": 0.35, "bonus": {"Cemento": -0.01, "Terra Battuta": 0.015, "Erba": -0.015}},
+    "passaro": {"serv": 0.64, "ret": 0.37, "bonus": {"Cemento": -0.005, "Terra Battuta": 0.015, "Erba": -0.01}},
+    "basilashvili": {"serv": 0.68, "ret": 0.35, "bonus": {"Cemento": 0.01, "Terra Battuta": -0.005, "Erba": 0.01}},
+    "masarova": {"serv": 0.62, "ret": 0.38, "bonus": {"Cemento": 0.01, "Terra Battuta": 0.01, "Erba": -0.01}},
+    "hercog": {"serv": 0.61, "ret": 0.38, "bonus": {"Cemento": 0.00, "Terra Battuta": 0.015, "Erba": -0.01}},
+    "podoroska": {"serv": 0.60, "ret": 0.40, "bonus": {"Cemento": -0.01, "Terra Battuta": 0.02, "Erba": -0.02}},
+    "romero gormaz": {"serv": 0.59, "ret": 0.40, "bonus": {"Cemento": -0.01, "Terra Battuta": 0.02, "Erba": -0.02}},
+    "samsonova": {"serv": 0.66, "ret": 0.37, "bonus": {"Cemento": 0.015, "Terra Battuta": -0.01, "Erba": 0.015}}
 }
 
-# --- 🌐 INTEGRAZIONE ARCHIVIO JEFF SACKMANN (GitHub) ---
+# --- 🌐 INTEGRAZIONE ARCHIVIO JEFF SACKMANN (ATP + WTA) ---
 @st.cache_data(ttl=86400)
 def scarica_archivio_sackmann():
-    """Scarica in modo trasparente l'anagrafica ufficiale dei tennisti dal repository di Jeff Sackmann"""
-    url = "https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master/atp_players.csv"
-    try:
-        resp = requests.get(url, timeout=6)
-        if resp.status_code == 200:
-            giocatori_web = {}
-            reader = csv.DictReader(io.StringIO(resp.text))
-            for row in reader:
-                cognome = row.get("name_last", "").strip().lower()
-                if cognome:
-                    giocatori_web[cognome] = {
-                        "nome_completo": f"{row.get('name_first', '')} {row.get('name_last', '')}".strip(),
-                        "mano": row.get("hand", "U"),
-                        "paese": row.get("ioc", "")
-                    }
-            return giocatori_web
-    except Exception:
-        pass
-    return {}
+    urls = [
+        "https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master/atp_players.csv",
+        "https://raw.githubusercontent.com/JeffSackmann/tennis_wta/master/wta_players.csv"
+    ]
+    giocatori_web = {}
+    for url in urls:
+        try:
+            resp = requests.get(url, timeout=6)
+            if resp.status_code == 200:
+                reader = csv.DictReader(io.StringIO(resp.text))
+                for row in reader:
+                    cognome = row.get("name_last", "").strip().lower()
+                    if cognome and len(cognome) > 3:
+                        giocatori_web[cognome] = {
+                            "nome_completo": f"{row.get('name_first', '')} {row.get('name_last', '')}".strip(),
+                            "paese": row.get("ioc", "")
+                        }
+        except Exception:
+            continue
+    return giocatori_web
 
-def cerca_statistiche_modello_A(nome_giocatore):
-    """Modello A: Solo DB Locale / Default"""
+def estrai_dati_modello_A(nome_giocatore):
+    """Modello A: Solo DB locale oppure Default puro"""
     nome_pulito = nome_giocatore.lower()
     for key in DATABASE_TENNISTI:
         if key in nome_pulito:
             return DATABASE_TENNISTI[key], "DB Locale"
-    return {"serv": 0.64, "ret": 0.38, "bonus": {"Cemento": 0.0, "Terra Battuta": 0.0, "Erba": 0.0}}, "Default (Non in DB)"
+    return {"serv": 0.64, "ret": 0.38, "bonus": {"Cemento": 0.0, "Terra Battuta": 0.0, "Erba": 0.0}}, "Default"
 
-def cerca_statistiche_modello_B(nome_giocatore, quota_giocatore, quota_avversario, archivio_sackmann):
-    """Modello B: DB Locale + Ricerca automatica su Jeff Sackmann e calibrazione di mercato"""
+def estrai_dati_modello_B(nome_giocatore, quota_giocatore, quota_avversario, archivio_sackmann):
+    """Modello B: DB locale -> Archivio Sackmann (ATP/WTA) + Calibrazione Bayesiana"""
     nome_pulito = nome_giocatore.lower()
-    
-    # 1. Controllo nel DB locale rapido
     for key in DATABASE_TENNISTI:
         if key in nome_pulito:
-            return DATABASE_TENNISTI[key], "DB Locale (Ottimizzato)"
+            return DATABASE_TENNISTI[key], "DB Locale"
             
-    # 2. Controllo nell'archivio globale di Jeff Sackmann
     trovato_sackmann = False
-    info_giocatore = ""
+    info_player = ""
     for cognome_ws, dati in archivio_sackmann.items():
-        if len(cognome_ws) > 3 and cognome_ws in nome_pulito:
+        if cognome_ws in nome_pulito:
             trovato_sackmann = True
-            info_giocatore = f"{dati['nome_completo']} ({dati['paese']})"
+            info_player = f"{dati['nome_completo']} ({dati['paese']})"
             break
             
-    # 3. Calibrazione statistica intelligente basata sulle quote SNAI (circuito Challenger / ITF)
     prob_mercato = (1 / quota_giocatore) / ((1 / quota_giocatore) + (1 / quota_avversario))
     correzione = (prob_mercato - 0.50) * 0.08
-    
-    serv_stimato = np.clip(0.61 + correzione, 0.54, 0.68)
+    serv_stimato = np.clip(0.61 + correzione, 0.53, 0.68)
     ret_stimato = np.clip(0.37 + correzione, 0.30, 0.44)
     
-    if trovato_sackmann:
-        etichetta = f"Archivio Sackmann ({info_giocatore}) + Calibrazione"
-    else:
-        etichetta = "Stima Circuiti Minori (Sackmann/Market)"
-        
+    etichetta = f"Sackmann ({info_player})" if trovato_sackmann else "Stima Circuito (Market)"
     return {"serv": serv_stimato, "ret": ret_stimato, "bonus": {"Cemento": 0.0, "Terra Battuta": 0.0, "Erba": 0.0}}, etichetta
 
-# --- MOTORE DI SIMULAZIONE MONTE CARLO ---
+# --- MOTORE MONTE CARLO ISOLATO ---
 def simula_punto(p_serv):
     return np.random.random() < p_serv
 
@@ -143,149 +152,4 @@ def simula_tiebreak(p_serv_1, p_serv_2):
     while True:
         serv_1 = ((p1_pts + p2_pts) // 1) % 2 == 0
         p_curr = p_serv_1 if serv_1 else (1 - p_serv_2)
-        if simula_punto(p_curr): p1_pts += 1
-        else: p2_pts += 1
-        if (p1_pts >= 7 or p2_pts >= 7) and abs(p1_pts - p2_pts) >= 2:
-            return p1_pts > p2_pts
-
-def simula_set(p_serv_1, p_serv_2):
-    g1, g2 = 0, 0
-    while True:
-        t1 = (g1 + g2) % 2 == 0
-        p_curr = p_serv_1 if t1 else (1 - p_serv_2)
-        vince_g1 = simula_game(p_curr) if t1 else not simula_game(1 - p_serv_2)
-        if t1 and vince_g1: g1 += 1
-        elif t1 and not vince_g1: g2 += 1
-        elif not t1 and not vince_g1: g1 += 1
-        else: g2 += 1
-        if g1 == 6 and g2 == 6: return simula_tiebreak(p_serv_1, p_serv_2)
-        if (g1 >= 6 or g2 >= 6) and abs(g1 - g2) >= 2: return g1 > g2
-
-def esegui_monte_carlo(p_serv_1, p_serv_2, n_sim=150000):
-    vittorie_1 = 0
-    for _ in range(n_sim):
-        s1, s2 = 0, 0
-        while s1 < 2 and s2 < 2:
-            if simula_set(p_serv_1, p_serv_2): s1 += 1
-            else: s2 += 1
-        if s1 == 2: vittorie_1 += 1
-    return (vittorie_1 / n_sim) * 100
-
-def arrotonda_per_snai(importo_euro):
-    """Vincoli SNAI: puntata minima 1.00€, incrementi di 0.05€"""
-    if importo_euro < 1.0:
-        return 0.0
-    importo_arrotondato = round(importo_euro / 0.05) * 0.05
-    return max(1.0, importo_arrotondato)
-
-def calcola_kelly(prob_percentuale, quota_bookmaker, bankroll, frazione=0.25):
-    p = prob_percentuale / 100.0
-    q = 1.0 - p
-    b = quota_bookmaker - 1.0
-    if b <= 0: return 0.0, 0.0
-    kelly_pieno = (b * p - q) / b
-    if kelly_pieno <= 0: return 0.0, 0.0
-    stake_euro_grezzo = bankroll * (kelly_pieno * frazione)
-    stake_euro_snai = arrotonda_per_snai(stake_euro_grezzo)
-    perc_effettiva = (stake_euro_snai / bankroll) * 100 if bankroll > 0 else 0.0
-    return perc_effettiva, stake_euro_snai
-# ----------------------------------------
-
-if st.button("🚀 ANALIZZA MATCH (CONFRONTO A/B SACKMANN)"):
-    lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
-    players, odds = [], []
-    
-    for line in lines:
-        if any(char in line for char in ["/", ":"]): continue
-        if any(c.isalpha() for c in line):
-            players.append(line)
-        elif "." in line:
-            try:
-                odds.append(line.replace(',', '.'))
-            except:
-                continue
-            
-    if len(players) >= 2 and len(odds) >= 2:
-        p1_name, p2_name = players[0], players[1]
-        odd_1, odd_2 = float(odds[0]), float(odds[1])
-        
-        with st.spinner("🌐 Connessione all'archivio storico di Jeff Sackmann in corso..."):
-            archivio_sackmann = scarica_archivio_sackmann()
-            
-            # --- MODELLO A (Solo DB Locale / Default) ---
-            s1_A, src1_A = cerca_statistiche_modello_A(p1_name)
-            s2_A, src2_A = cerca_statistiche_modello_A(p2_name)
-            p_serv_1_A = ((s1_A["serv"] + (1 - s2_A["ret"])) / 2) + s1_A["bonus"][superficie]
-            p_serv_2_A = ((s2_A["serv"] + (1 - s1_A["ret"])) / 2) + s2_A["bonus"][superficie]
-            
-            prob_1_A = esegui_monte_carlo(p_serv_1_A, p_serv_2_A)
-            prob_2_A = 100 - prob_1_A
-            fair_1_A = 100 / prob_1_A if prob_1_A > 0 else 0
-            fair_2_A = 100 / prob_2_A if prob_2_A > 0 else 0
-            _, euro_1_A = calcola_kelly(prob_1_A, odd_1, bankroll)
-            _, euro_2_A = calcola_kelly(prob_2_A, odd_2, bankroll)
-            
-            # --- MODELLO B (DB Locale + Jeff Sackmann & Calibrazione) ---
-            s1_B, src1_B = cerca_statistiche_modello_B(p1_name, odd_1, odd_2, archivio_sackmann)
-            s2_B, src2_B = cerca_statistiche_modello_B(p2_name, odd_2, odd_1, archivio_sackmann)
-            p_serv_1_B = ((s1_B["serv"] + (1 - s2_B["ret"])) / 2) + s1_B["bonus"][superficie]
-            p_serv_2_B = ((s2_B["serv"] + (1 - s1_B["ret"])) / 2) + s2_B["bonus"][superficie]
-            
-            prob_1_B = esegui_monte_carlo(p_serv_1_B, p_serv_2_B)
-            prob_2_B = 100 - prob_1_B
-            fair_1_B = 100 / prob_1_B if prob_1_B > 0 else 0
-            fair_2_B = 100 / prob_2_B if prob_2_B > 0 else 0
-            _, euro_1_B = calcola_kelly(prob_1_B, odd_1, bankroll)
-            _, euro_2_B = calcola_kelly(prob_2_B, odd_2, bankroll)
-
-        # --- DIAGNOSTICA VERBOSA ---
-        st.markdown(f"""
-            <div style="background-color: #1E1E1E; padding: 15px; border-radius: 8px; border: 2px solid #FFFDD0; margin-bottom: 15px;">
-                <span style="color: #FFFDD0; font-size: 16px; font-weight: bold;">🎾 {p1_name} (@{odd_1}) vs {p2_name} (@{odd_2}) — {superficie}</span><br><br>
-                <span style="color: #FFD700; font-size: 13px;"><b>Modello A (Interno):</b><br>
-                • {p1_name}: {src1_A}<br>
-                • {p2_name}: {src2_A}</span><br><br>
-                <span style="color: #00FF7F; font-size: 13px;"><b>Modello B (Sackmann Edition):</b><br>
-                • {p1_name}: {src1_B}<br>
-                • {p2_name}: {src2_B}</span>
-            </div>
-        """, unsafe_allow_html=True)
-
-        # --- CONFRONTO AFFIANCATO A vs B ---
-        st.markdown("### 📊 Confronto Modelli (Backtesting in Corso)")
-        col_A, col_B = st.columns(2)
-        
-        with col_A:
-            st.markdown(f"""
-                <div style="background-color: #1E1E1E; padding: 15px; border-radius: 8px; border: 1px solid #FFD700;">
-                    <h3 style="color: #FFD700; margin-top:0; text-align:center;">🅰️ Modello A</h3>
-                    <p style="color: #FFFDD0; margin-bottom: 5px;"><b>{p1_name}</b>: {prob_1_A:.1f}% (Equa: <b>{fair_1_A:.2f}</b>)</p>
-                    <p style="color: {'#00FF7F' if euro_1_A > 0 else '#FFA07A'}; font-size: 14px; margin-top:0;">
-                        {"🔥 VALUE! Puntata: € " + f"{euro_1_A:.2f}" if euro_1_A > 0 else "❌ No Value"}
-                    </p>
-                    <hr style="border-color: #444;">
-                    <p style="color: #FFFDD0; margin-bottom: 5px;"><b>{p2_name}</b>: {prob_2_A:.1f}% (Equa: <b>{fair_2_A:.2f}</b>)</p>
-                    <p style="color: {'#00FF7F' if euro_2_A > 0 else '#FFA07A'}; font-size: 14px; margin-top:0;">
-                        {"🔥 VALUE! Puntata: € " + f"{euro_2_A:.2f}" if euro_2_A > 0 else "❌ No Value"}
-                    </p>
-                </div>
-            """, unsafe_allow_html=True)
-
-        with col_B:
-            st.markdown(f"""
-                <div style="background-color: #1E1E1E; padding: 15px; border-radius: 8px; border: 1px solid #00FF7F;">
-                    <h3 style="color: #00FF7F; margin-top:0; text-align:center;">🅱️ Modello B (Sackmann)</h3>
-                    <p style="color: #FFFDD0; margin-bottom: 5px;"><b>{p1_name}</b>: {prob_1_B:.1f}% (Equa: <b>{fair_1_B:.2f}</b>)</p>
-                    <p style="color: {'#00FF7F' if euro_1_B > 0 else '#FFA07A'}; font-size: 14px; margin-top:0;">
-                        {"🔥 VALUE! Puntata: € " + f"{euro_1_B:.2f}" if euro_1_B > 0 else "❌ No Value"}
-                    </p>
-                    <hr style="border-color: #444;">
-                    <p style="color: #FFFDD0; margin-bottom: 5px;"><b>{p2_name}</b>: {prob_2_B:.1f}% (Equa: <b>{fair_2_B:.2f}</b>)</p>
-                    <p style="color: {'#00FF7F' if euro_2_B > 0 else '#FFA07A'}; font-size: 14px; margin-top:0;">
-                        {"🔥 VALUE! Puntata: € " + f"{euro_2_B:.2f}" if euro_2_B > 0 else "❌ No Value"}
-                    </p>
-                </div>
-            """, unsafe_allow_html=True)
-
-    else:
-        st.error(f"Dati non estratti correttamente. Nomi: {len(players)}, Quote: {len(odds)}. Controlla il testo incollato.")
+        if simula_
