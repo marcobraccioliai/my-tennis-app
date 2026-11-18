@@ -100,7 +100,7 @@ def esegui_monte_carlo(p_serv_1, p_serv_2, n_sim=200000):
     return (vittorie_1 / n_sim) * 100
 # ----------------------------------------
 
-if st.button("🚀 CONVERTI & SIMULA MATCH"):
+if st.button("🚀 🚀 🚀 🚀"):
     lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
     players = []
     odds = []
