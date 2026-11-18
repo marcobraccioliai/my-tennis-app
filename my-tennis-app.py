@@ -2,21 +2,32 @@ import streamlit as st
 
 st.set_page_config(page_title="Tennis Hub", layout="centered")
 
-# Stile grafico coerente
+# Stile grafico corretto e pulito
 st.markdown("""
     <style>
-    /* Sfondo pagina */
-    [data-testid="stAppViewContainer"] { background-color: #B20000 !important; }
+    /* Sfondo principale dell'app */
+    [data-testid="stAppViewContainer"] { 
+        background-color: #B20000 !important; 
+    }
     
-    /* Titoli e testo principale */
-    .stApp div[data-testid="stMarkdownContainer"], .stApp label, .stApp h1, .stApp h2, .stApp h3 { color: #FFFDD0 !important; }
+    /* Titoli e testo principale nel corpo della pagina */
+    .stApp div[data-testid="stMarkdownContainer"] h1, 
+    .stApp div[data-testid="stMarkdownContainer"] h2, 
+    .stApp div[data-testid="stMarkdownContainer"] h3, 
+    .stApp div[data-testid="stMarkdownContainer"] p,
+    .stApp label { 
+        color: #FFFDD0 !important; 
+    }
     
-    /* Sidebar */
-    [data-testid="stSidebar"] { background-color: #F0F2F6 !important; }
+    /* Personalizzazione della Sidebar */
+    [data-testid="stSidebar"] { 
+        background-color: #1E1E1E !important; /* Sfondo scuro per la sidebar, fa risaltare i link */
+    }
     
-    /* TESTO SIDEBAR (Qui stava il problema) */
-    [data-testid="stSidebar"] div, [data-testid="stSidebar"] span, [data-testid="stSidebar"] a {
-        color: #000000 !important;
+    /* Testo e link di navigazione nella sidebar (colore bianco/crema ben leggibile) */
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] span, 
+    [data-testid="stSidebar"] [data-testid="stSidebarNav"] a {
+        color: #FFFDD0 !important;
         font-weight: bold;
     }
     </style>
@@ -24,4 +35,4 @@ st.markdown("""
 
 st.title("🎾 Tennis Betting Hub")
 st.write("Benvenuto nel centro di controllo.")
-st.write("Usa il menu a sinistra per selezionare il convertitore.")
+st.write("Usa il menu a sinistra per selezionare il convertitore e avviare le tue analisi.")
