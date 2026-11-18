@@ -24,8 +24,7 @@ st.markdown("""
 st.title("✂️ Converter & Monte Carlo Tennis")
 raw_text = st.text_area("Incolla blocco match SNAI:", height=150)
 
-# --- 📚 PICCOLO ARCHIVIO LOCALE (Le 4 Variabili per tennista) ---
-# Struttura: "Cognome": {"servizio": %, "risposta": %, "superficie_favorevole": bool}
+# --- 📚 DATABASE LOCALE AMPLIATO (Con flag di controllo) ---
 DATABASE_TENNISTI = {
     "cobolli": {"serv": 0.63, "ret": 0.39},
     "tiafoe": {"serv": 0.66, "ret": 0.37},
@@ -34,17 +33,18 @@ DATABASE_TENNISTI = {
     "medvedev": {"serv": 0.68, "ret": 0.41},
     "djokovic": {"serv": 0.69, "ret": 0.42},
     "zverev": {"serv": 0.71, "ret": 0.36},
-    "bublik": {"serv": 0.67, "ret": 0.33}
+    "bublik": {"serv": 0.67, "ret": 0.33},
+    "prizmic": {"serv": 0.65, "ret": 0.38}
 }
 
 def cerca_statistiche(nome_giocatore):
-    """Cerca il tennista nel database locale usando il cognome (case-insensitive)"""
+    """Cerca il tennista nel database locale e restituisce le stats e lo stato di origine"""
     nome_pulito = nome_giocatore.lower()
     for key in DATABASE_TENNISTI:
         if key in nome_pulito:
-            return DATABASE_TENNISTI[key]
-    # Valori di default se il tennista non è nell'archivio locale
-    return {"serv": 0.64, "ret": 0.38}
+            return DATABASE_TENNISTI[key], True # Trovato nel DB
+    # Valori di default se il tennista non è censito
+    return {"serv": 0.64, "ret": 0.38}, False # Non trovato, usato default
 
 # --- MOTORE DI SIMULAZIONE MONTE CARLO ---
 def simula_punto(p_serv):
@@ -100,7 +100,7 @@ def esegui_monte_carlo(p_serv_1, p_serv_2, n_sim=200000):
     return (vittorie_1 / n_sim) * 100
 # ----------------------------------------
 
-if st.button("🚀 🚀 🚀 🚀"):
+if st.button("🚀 CONVERTI & SIMULA MATCH"):
     lines = [l.strip() for l in raw_text.split('\n') if l.strip()]
     players = []
     odds = []
@@ -121,24 +121,29 @@ if st.button("🚀 🚀 🚀 🚀"):
         odd_1 = float(odds[0])
         odd_2 = float(odds[1])
         
-        # Recuperiamo le statistiche dal nostro archivio locale!
-        stats_1 = cerca_statistiche(p1_name)
-        stats_2 = cerca_statistiche(p2_name)
+        # Interroghiamo il database con il sistema di controllo verboso
+        stats_1, trovato_1 = cerca_statistiche(p1_name)
+        stats_2, trovato_2 = cerca_statistiche(p2_name)
         
-        # Calcolo combinato della probabilità di punto al servizio (Service % + la pressione in risposta dell'avversario)
+        # Calcolo combinato
         p_serv_1 = (stats_1["serv"] + (1 - stats_2["ret"])) / 2
         p_serv_2 = (stats_2["serv"] + (1 - stats_1["ret"])) / 2
         
+        # --- BLOCCO DI TRASPARENZA E VERBOSITÀ ---
         st.markdown(f"""
-            <div style="background-color: #1E1E1E; padding: 12px; border-radius: 8px; border: 2px solid #FFFDD0; margin-bottom: 15px;">
-                <span style="color: #FFFDD0; font-size: 16px; font-weight: bold;">🎾 Match Rilevato: {p1_name} vs {p2_name}</span><br>
-                <span style="color: #A0A0A0; font-size: 12px;">Dati caricati dal Database Locale (Servizio/Risposta stimati)</span>
+            <div style="background-color: #1E1E1E; padding: 15px; border-radius: 8px; border: 2px solid #FFFDD0; margin-bottom: 15px;">
+                <span style="color: #FFFDD0; font-size: 16px; font-weight: bold;">🎾 Match Rilevato: {p1_name} vs {p2_name}</span><br><br>
+                <span style="color: #00FF7F; font-size: 14px;"><b>{p1_name}:</b> {"✅ Trovato nel Database" if trovato_1 else "⚠️ NON trovato -> Usati valori di default (Serv: 64%, Ret: 38%"}</span><br>
+                <span style="color: #00FF7F; font-size: 14px;"><b>{p2_name}:</b> {"✅ Trovato nel Database" if trovato_2 else "⚠️ NON trovato -> Usati valori di default (Serv: 64%, Ret: 38%"}</span><br><br>
+                <span style="color: #FFD700; font-size: 13px;">⚙️ Parametri passati al Monte Carlo (Prob. punto al servizio stimata):<br>
+                • {p1_name}: {p_serv_1*100:.1f}%<br>
+                • {p2_name}: {p_serv_2*100:.1f}%</span>
             </div>
         """, unsafe_allow_html=True)
         
         st.write(f"Quote SNAI: `{p1_name}` @ **{odd_1}** | `{p2_name}` @ **{odd_2}**")
         
-        with st.spinner("⚙️ Esecuzione di 200.000 simulazioni Monte Carlo con dati reali in corso..."):
+        with st.spinner("⚙️ Esecuzione di 200.000 simulazioni Monte Carlo in corso..."):
             prob_1 = esegui_monte_carlo(p_serv_1, p_serv_2, n_sim=200000)
             prob_2 = 100 - prob_1
             
