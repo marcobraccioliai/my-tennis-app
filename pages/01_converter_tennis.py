@@ -264,7 +264,7 @@ def estrai_blocchi_match(testo_grezzo):
 
 # ----------------------------------------
 
-if st.button("🚀 AVVIA ELABORAZIONE SEQUENZIALE TORNEO"):
+if st.button("🐾🐾🐾🐾"):
     if not raw_text.strip():
         st.warning("Incolla prima il blocco di testo con i match!")
     else:
