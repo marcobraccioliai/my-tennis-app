@@ -3,19 +3,44 @@ import numpy as np
 
 st.set_page_config(page_title="Converter & Monte Carlo Tennis", layout="centered")
 
-# Stile grafico coerente con la Home
+# Stile grafico corretto: contrasti perfetti e leggibilità garantita
 st.markdown("""
     <style>
-    [data-testid="stAppViewContainer"] { background-color: #B20000 !important; }
+    /* Sfondo principale dell'app (Rosso) */
+    [data-testid="stAppViewContainer"] { 
+        background-color: #B20000 !important; 
+    }
+    
+    /* Titoli e etichette generali nel corpo della pagina */
     .stApp div[data-testid="stMarkdownContainer"] h1, 
     .stApp div[data-testid="stMarkdownContainer"] h2, 
     .stApp div[data-testid="stMarkdownContainer"] h3, 
     .stApp div[data-testid="stMarkdownContainer"] p,
-    .stApp label { color: #FFFDD0 !important; }
-    .stButton button { color: #000000 !important; background-color: #FFFDD0 !important; font-weight: bold; }
+    .stApp label { 
+        color: #FFFDD0 !important; 
+    }
     
-    /* Sidebar */
-    [data-testid="stSidebar"] { background-color: #1E1E1E !important; }
+    /* Pulsante principale */
+    .stButton button { 
+        color: #000000 !important; 
+        background-color: #FFFDD0 !important; 
+        font-weight: bold; 
+    }
+    
+    /* CORREZIONE FONDAMENTALE: Casella di testo (Copia-Incolla) leggibile (Testo Nero su Sfondo Bianco) */
+    [data-testid="stTextArea"] textarea {
+        color: #000000 !important;
+        background-color: #FFFFFF !important;
+        -webkit-text-fill-color: #000000 !important;
+    }
+    [data-testid="stTextArea"] label {
+        color: #FFFDD0 !important;
+    }
+
+    /* Personalizzazione della Sidebar */
+    [data-testid="stSidebar"] { 
+        background-color: #1E1E1E !important; 
+    }
     [data-testid="stSidebar"] [data-testid="stSidebarNav"] span, 
     [data-testid="stSidebar"] [data-testid="stSidebarNav"] a {
         color: #FFFDD0 !important;
