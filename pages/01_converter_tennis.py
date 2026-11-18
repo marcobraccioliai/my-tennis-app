@@ -8,7 +8,7 @@ from datetime import datetime
 
 st.set_page_config(page_title="Pro Value Betting - Batch Scanner", layout="centered")
 
-# Stile grafico blindato e pulito
+# Stile grafico blindato e pulito (inclusi i box di sistema st.info/st.success)
 st.markdown("""
     <style>
     [data-testid="stAppViewContainer"] { background-color: #B20000 !important; }
@@ -32,6 +32,16 @@ st.markdown("""
     [data-testid="stSidebar"] [data-testid="stSidebarNav"] span, 
     [data-testid="stSidebar"] [data-testid="stSidebarNav"] a { color: #FFFDD0 !important; font-weight: bold; }
     div[role="radiogroup"] label div p { color: #FFFDD0 !important; font-weight: bold !important; }
+    
+    /* Override dei box di sistema Streamlit per coerenza cromatica */
+    div[data-testid="stInfo"], div[data-testid="stSuccess"], div[data-testid="stWarning"], div[data-testid="stError"] {
+        background-color: #1E1E1E !important;
+        color: #FFFDD0 !important;
+        border: 1px solid #FFFDD0 !important;
+    }
+    div[data-testid="stInfo"] p, div[data-testid="stSuccess"] p, div[data-testid="stWarning"] p, div[data-testid="stError"] p {
+        color: #FFFDD0 !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -100,7 +110,6 @@ def scarica_archivio_sackmann():
     return giocatori_web
 
 def estrai_dati_modello_A(nome_giocatore):
-    """Modello A: Solo DB locale oppure Default puro"""
     nome_pulito = nome_giocatore.lower()
     for key in DATABASE_TENNISTI:
         if key in nome_pulito:
@@ -108,7 +117,6 @@ def estrai_dati_modello_A(nome_giocatore):
     return {"serv": 0.64, "ret": 0.38, "bonus": {"Cemento": 0.0, "Terra Battuta": 0.0, "Erba": 0.0}}, "Default"
 
 def estrai_dati_modello_B(nome_giocatore, quota_giocatore, quota_avversario, archivio_sackmann):
-    """Modello B: DB locale -> Archivio Sackmann (ATP/WTA) + Calibrazione Bayesiana"""
     nome_pulito = nome_giocatore.lower()
     for key in DATABASE_TENNISTI:
         if key in nome_pulito:
@@ -181,13 +189,11 @@ def esegui_monte_carlo(p_serv_1, p_serv_2, n_sim=100000):
     return (vittorie_1 / n_sim) * 100
 
 def arrotonda_per_snai(importo_euro):
-    """Vincoli SNAI: puntata minima 1.00€, incrementi di 0.05€"""
     if importo_euro < 1.0:
         return 0.0
     return max(1.0, round(importo_euro / 0.05) * 0.05)
 
 def valuta_scommessa(prob_percentuale, quota_bookmaker, bankroll, frazione=0.25, edge_minimo=0.05):
-    """Calcola Edge, Kelly Frazionario e applica il blocco 'Stai Fermo' sotto soglia"""
     p = prob_percentuale / 100.0
     q = 1.0 - p
     b = quota_bookmaker - 1.0
@@ -218,22 +224,18 @@ def estrai_blocchi_match(testo_grezzo):
     i = 0
     while i < len(linee):
         riga_corr = linee[i]
-        # Identifica data (es. 18/11) o orario (es. 17:00)
         if ("/" in riga_corr and len(riga_corr) <= 6) or (":" in riga_corr and len(riga_corr) <= 5):
             i += 1
             continue
             
-        # Verifica due righe consecutive di nomi giocatori
         if i + 1 < len(linee) and any(c.isalpha() for c in linee[i]) and any(c.isalpha() for c in linee[i+1]):
             p1 = linee[i]
             p2 = linee[i+1]
             i += 2
             
-            # Raccoglie le quote del blocco corrente fino al separatore successivo
             quote_blocco = []
             while i < len(linee):
                 item = linee[i]
-                # Stop se incontra data, orario o nuovi nomi
                 if ("/" in item and len(item) <= 6) or (":" in item and len(item) <= 5) or any(c.isalpha() for c in item):
                     break
                 if item != "-":
@@ -245,7 +247,6 @@ def estrai_blocchi_match(testo_grezzo):
                         pass
                 i += 1
                 
-            # Filtra i match di doppio (contengono '/' nel nome della coppia)
             if "/" in p1 or "/" in p2:
                 doppi_scartati += 1
                 continue
@@ -281,16 +282,13 @@ if st.button("🚀 AVVIA ELABORAZIONE SEQUENZIALE TORNEO"):
             
             report_esportazione = []
             
-            # --- CICLO SEQUENZIALE ISOLATO (DATA SEGREGATION) ---
             for idx, match_data in enumerate(lista_match, 1):
-                # Variabili locali strict-scoped per evitare sovrapposizioni
                 curr_p1 = str(match_data["p1"])
                 curr_p2 = str(match_data["p2"])
                 curr_odd1 = float(match_data["odd_1"])
                 curr_odd2 = float(match_data["odd_2"])
                 
                 with st.spinner(f"⚙️ Elaborazione Match {idx}/{len(lista_match)}: {curr_p1} vs {curr_p2}..."):
-                    # 1. Estrazione Modello A
                     s1_A, src1_A = estrai_dati_modello_A(curr_p1)
                     s2_A, src2_A = estrai_dati_modello_A(curr_p2)
                     p_serv_1_A = ((s1_A["serv"] + (1 - s2_A["ret"])) / 2) + s1_A["bonus"][superficie]
@@ -302,11 +300,10 @@ if st.button("🚀 AVVIA ELABORAZIONE SEQUENZIALE TORNEO"):
                     edge_1_A, stake_1_A, verdetto_1_A = valuta_scommessa(prob_1_A, curr_odd1, bankroll)
                     edge_2_A, stake_2_A, verdetto_2_A = valuta_scommessa(prob_2_A, curr_odd2, bankroll)
                     
-                    # 2. Estrazione Modello B (Sackmann + Calibrazione)
                     s1_B, src1_B = estrai_dati_modello_B(curr_p1, curr_odd1, curr_odd2, archivio_sackmann)
                     s2_B, src2_B = estrai_dati_modello_B(curr_p2, curr_odd2, curr_odd1, archivio_sackmann)
                     p_serv_1_B = ((s1_B["serv"] + (1 - s2_B["ret"])) / 2) + s1_B["bonus"][superficie]
-                    p_serv_2_B = ((s2_B["serv"] + (1 - s1_B["ret"])) / 2) + s2_B["bonus"][superficie]
+                    p_serv_2_B = ((s2_B["serv"] + (1 - s1_B["ret"])) / 2) + s1_B["bonus"][superficie]
                     prob_1_B = esegui_monte_carlo(p_serv_1_B, p_serv_2_B, n_sim=100000)
                     prob_2_B = 100.0 - prob_1_B
                     fair_1_B = 100.0 / prob_1_B if prob_1_B > 0 else 0.0
@@ -314,7 +311,6 @@ if st.button("🚀 AVVIA ELABORAZIONE SEQUENZIALE TORNEO"):
                     edge_1_B, stake_1_B, verdetto_1_B = valuta_scommessa(prob_1_B, curr_odd1, bankroll)
                     edge_2_B, stake_2_B, verdetto_2_B = valuta_scommessa(prob_2_B, curr_odd2, bankroll)
 
-                # --- OUTPUT IMMEDIATO DEL SINGOLO MATCH ---
                 st.markdown(f"""
                     <div style="background-color: #1E1E1E; padding: 15px; border-radius: 8px; border: 2px solid #FFFDD0; margin-top: 15px;">
                         <h3 style="color: #FFFDD0; margin-top:0;">Match #{idx}: {curr_p1} (@{curr_odd1}) vs {curr_p2} (@{curr_odd2})</h3>
@@ -355,7 +351,6 @@ if st.button("🚀 AVVIA ELABORAZIONE SEQUENZIALE TORNEO"):
                         </div>
                     """, unsafe_allow_html=True)
 
-                # Registrazione riga pulita per l'esportazione finale
                 report_esportazione.append({
                     "Match #": idx,
                     "Superficie": superficie,
@@ -379,7 +374,6 @@ if st.button("🚀 AVVIA ELABORAZIONE SEQUENZIALE TORNEO"):
                     "ModA Puntata 2 (€)": stake_2_A
                 })
 
-            # --- RIEPILOGO TABELLARE ED ESPORTAZIONE CSV ---
             st.markdown("---")
             st.subheader("📋 Riepilogo Backtesting ed Esportazione")
             df_report = pd.DataFrame(report_esportazione)
