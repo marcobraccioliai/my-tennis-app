@@ -39,8 +39,7 @@ with col_cfg2:
 
 raw_text = st.text_area("Incolla blocco match SNAI:", height=140)
 
-# --- 📚 DATABASE TENNISTI AMPLIATO (Servizio %, Risposta %, Bonus Superficie) ---
-# Bonus superficie: valore aggiunto/sottratto alla probabilità di punto in base alla specializzazione
+# --- 📚 DATABASE TENNISTI AMPLIATO ---
 DATABASE_TENNISTI = {
     "sinner": {"serv": 0.70, "ret": 0.43, "bonus": {"Cemento": 0.015, "Terra Battuta": 0.00, "Erba": 0.01}},
     "alcaraz": {"serv": 0.69, "ret": 0.44, "bonus": {"Cemento": 0.005, "Terra Battuta": 0.015, "Erba": 0.015}},
@@ -126,8 +125,16 @@ def esegui_monte_carlo(p_serv_1, p_serv_2, n_sim=200000):
         if s1 == 2: vittorie_1 += 1
     return (vittorie_1 / n_sim) * 100
 
+def arrotonda_per_snai(importo_euro):
+    """Arrotonda l'importo rispettando i vincoli SNAI: minimo 1.00€ e multipli di 0.05€"""
+    if importo_euro < 1.0:
+        return 0.0  # Sotto l'euro minimo di scommessa singola, non giocabile
+    
+    # Arrotondamento al multiplo di 0.05 più vicino[cite: 9]
+    importo_arrotondato = round(importo_euro / 0.05) * 0.05
+    return max(1.0, importo_arrotondato)
+
 def calcola_kelly(prob_percentuale, quota_bookmaker, bankroll, frazione=0.25):
-    """Calcola la puntata consigliata con il Criterio di Kelly Frazionario (Quarter Kelly)"""
     p = prob_percentuale / 100.0
     q = 1.0 - p
     b = quota_bookmaker - 1.0
@@ -138,8 +145,13 @@ def calcola_kelly(prob_percentuale, quota_bookmaker, bankroll, frazione=0.25):
         return 0.0, 0.0
         
     kelly_frazionario = kelly_pieno * frazione
-    stake_euro = bankroll * kelly_frazionario
-    return kelly_frazionario * 100, stake_euro
+    stake_euro_grezzo = bankroll * kelly_frazionario
+    
+    # Applicazione dei limiti SNAI
+    stake_euro_snai = arrotonda_per_snai(stake_euro_grezzo)
+    perc_effettiva = (stake_euro_snai / bankroll) * 100 if bankroll > 0 else 0.0
+    
+    return perc_effettiva, stake_euro_snai
 # ----------------------------------------
 
 if st.button("🚀 ANALIZZA MATCH & CALCOLA STAKE"):
@@ -163,14 +175,12 @@ if st.button("🚀 ANALIZZA MATCH & CALCOLA STAKE"):
         stats_1, trovato_1 = cerca_statistiche(p1_name)
         stats_2, trovato_2 = cerca_statistiche(p2_name)
         
-        # Applicazione del bonus/malus superficie sulle probabilità di servizio
         bonus_1 = stats_1["bonus"][superficie]
         bonus_2 = stats_2["bonus"][superficie]
         
         p_serv_1 = ((stats_1["serv"] + (1 - stats_2["ret"])) / 2) + bonus_1
         p_serv_2 = ((stats_2["serv"] + (1 - stats_1["ret"])) / 2) + bonus_2
         
-        # --- DIAGNOSTICA VERBOSA ---
         st.markdown(f"""
             <div style="background-color: #1E1E1E; padding: 15px; border-radius: 8px; border: 2px solid #FFFDD0; margin-bottom: 15px;">
                 <span style="color: #FFFDD0; font-size: 16px; font-weight: bold;">🎾 {p1_name} vs {p2_name} ({superficie})</span><br><br>
@@ -206,7 +216,7 @@ if st.button("🚀 ANALIZZA MATCH & CALCOLA STAKE"):
                 st.markdown(f"""
                     <div style="background-color: #093d1e; padding: 10px; border-radius: 8px; border: 1px solid #00FF7F; margin-top: 10px; text-align: center;">
                         <span style="color: #00FF7F; font-weight: bold; font-size: 16px;">🔥 VALUE BET!</span><br>
-                        <span style="color: #FFFDD0; font-size: 14px;">Puntata (Quarter Kelly): <b>€ {euro_k1:.2f}</b> ({perc_k1:.2f}%)</span>
+                        <span style="color: #FFFDD0; font-size: 14px;">Puntata consigliata (SNAI Ready): <b>€ {euro_k1:.2f}</b></span>
                     </div>
                 """, unsafe_allow_html=True)
             else:
@@ -226,7 +236,7 @@ if st.button("🚀 ANALIZZA MATCH & CALCOLA STAKE"):
                 st.markdown(f"""
                     <div style="background-color: #093d1e; padding: 10px; border-radius: 8px; border: 1px solid #00FF7F; margin-top: 10px; text-align: center;">
                         <span style="color: #00FF7F; font-weight: bold; font-size: 16px;">🔥 VALUE BET!</span><br>
-                        <span style="color: #FFFDD0; font-size: 14px;">Puntata (Quarter Kelly): <b>€ {euro_k2:.2f}</b> ({perc_k2:.2f}%)</span>
+                        <span style="color: #FFFDD0; font-size: 14px;">Puntata consigliata (SNAI Ready): <b>€ {euro_k2:.2f}</b></span>
                     </div>
                 """, unsafe_allow_html=True)
             else:
