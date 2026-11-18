@@ -8,7 +8,7 @@ from datetime import datetime
 
 st.set_page_config(page_title="Pro Value Betting - Batch Scanner", layout="centered")
 
-# Stile grafico blindato e pulito (inclusi i box di sistema st.info/st.success)
+# Stile grafico blindato e pulito (Dark Mode coerente con Rosso/Crema)
 st.markdown("""
     <style>
     [data-testid="stAppViewContainer"] { background-color: #B20000 !important; }
@@ -17,11 +17,20 @@ st.markdown("""
     .stApp div[data-testid="stMarkdownContainer"] h3, 
     .stApp div[data-testid="stMarkdownContainer"] p,
     .stApp label { color: #FFFDD0 !important; }
-    .stButton button, .stButton button p, [data-testid="stDownloadButton"] button, [data-testid="stDownloadButton"] button p { 
-        color: #000000 !important; 
+    
+    /* Bottoni e download */
+    .stButton button, [data-testid="stDownloadButton"] button { 
+        color: #1E1E1E !important; 
         background-color: #FFFDD0 !important; 
         font-weight: bold !important; 
+        border-radius: 6px !important;
     }
+    .stButton button p, [data-testid="stDownloadButton"] button p {
+        color: #1E1E1E !important;
+        font-weight: bold !important;
+    }
+    
+    /* Caselle di testo */
     [data-testid="stTextArea"] textarea, [data-testid="stNumberInput"] input { 
         color: #000000 !important; 
         background-color: #FFFFFF !important; 
@@ -32,16 +41,6 @@ st.markdown("""
     [data-testid="stSidebar"] [data-testid="stSidebarNav"] span, 
     [data-testid="stSidebar"] [data-testid="stSidebarNav"] a { color: #FFFDD0 !important; font-weight: bold; }
     div[role="radiogroup"] label div p { color: #FFFDD0 !important; font-weight: bold !important; }
-    
-    /* Override dei box di sistema Streamlit per coerenza cromatica */
-    div[data-testid="stInfo"], div[data-testid="stSuccess"], div[data-testid="stWarning"], div[data-testid="stError"] {
-        background-color: #1E1E1E !important;
-        color: #FFFDD0 !important;
-        border: 1px solid #FFFDD0 !important;
-    }
-    div[data-testid="stInfo"] p, div[data-testid="stSuccess"] p, div[data-testid="stWarning"] p, div[data-testid="stError"] p {
-        color: #FFFDD0 !important;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -273,12 +272,20 @@ if st.button("🚀 AVVIA ELABORAZIONE SEQUENZIALE TORNEO"):
         lista_match, n_doppi = estrai_blocchi_match(raw_text)
         
         if n_doppi > 0:
-            st.info(f"ℹ️ Esclusi automaticamente **{n_doppi} match di doppio** (il modello Monte Carlo simula esclusivamente il singolare).")
+            st.markdown(f"""
+                <div style="background-color: #1E1E1E; padding: 12px; border-radius: 8px; border: 1px solid #FFFDD0; margin-bottom: 10px;">
+                    <span style="color: #FFFDD0; font-size: 14px;">ℹ️ Esclusi automaticamente <b>{n_doppi} match di doppio</b> (il modello simula solo il singolare).</span>
+                </div>
+            """, unsafe_allow_html=True)
             
         if not lista_match:
             st.error("Nessun match di singolare valido individuato. Controlla il testo incollato.")
         else:
-            st.success(f"Individuati **{len(lista_match)} match di singolare**. Avvio elaborazione isolata...")
+            st.markdown(f"""
+                <div style="background-color: #1E1E1E; padding: 12px; border-radius: 8px; border: 1px solid #00FF7F; margin-bottom: 15px;">
+                    <span style="color: #00FF7F; font-size: 14px; font-weight: bold;">✅ Individuati {len(lista_match)} match di singolare. Avvio elaborazione isolata...</span>
+                </div>
+            """, unsafe_allow_html=True)
             
             report_esportazione = []
             
@@ -303,7 +310,7 @@ if st.button("🚀 AVVIA ELABORAZIONE SEQUENZIALE TORNEO"):
                     s1_B, src1_B = estrai_dati_modello_B(curr_p1, curr_odd1, curr_odd2, archivio_sackmann)
                     s2_B, src2_B = estrai_dati_modello_B(curr_p2, curr_odd2, curr_odd1, archivio_sackmann)
                     p_serv_1_B = ((s1_B["serv"] + (1 - s2_B["ret"])) / 2) + s1_B["bonus"][superficie]
-                    p_serv_2_B = ((s2_B["serv"] + (1 - s1_B["ret"])) / 2) + s1_B["bonus"][superficie]
+                    p_serv_2_B = ((s2_B["serv"] + (1 - s1_B["ret"])) / 2) + s2_B["bonus"][superficie]
                     prob_1_B = esegui_monte_carlo(p_serv_1_B, p_serv_2_B, n_sim=100000)
                     prob_2_B = 100.0 - prob_1_B
                     fair_1_B = 100.0 / prob_1_B if prob_1_B > 0 else 0.0
