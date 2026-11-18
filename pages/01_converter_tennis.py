@@ -49,7 +49,7 @@ st.title("🎾 Pro Value Betting - Batch Scanner")
 # --- PANNELLO CONFIGURAZIONE RAPIDA ---
 col_cfg1, col_cfg2 = st.columns(2)
 with col_cfg1:
-    bankroll = st.number_input("💰 Il tuo Bankroll (€):", min_value=10.0, value=1000.0, step=50.0)
+    bankroll = st.number_input("💰 Il tuo Bankroll (€):", min_value=10.0, value=200.0, step=50.0)
 with col_cfg2:
     superficie = st.radio("🏟️ Superficie del torneo:", ["Cemento", "Terra Battuta", "Erba"], horizontal=True)
 
