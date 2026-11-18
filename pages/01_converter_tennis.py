@@ -3,7 +3,7 @@ import numpy as np
 
 st.set_page_config(page_title="Converter & Monte Carlo Tennis", layout="centered")
 
-# Stile grafico corretto: contrasti perfetti e leggibilità garantita
+# Stile grafico corretto: contrasti perfetti su tutti i componenti
 st.markdown("""
     <style>
     /* Sfondo principale dell'app (Rosso) */
@@ -11,30 +11,48 @@ st.markdown("""
         background-color: #B20000 !important; 
     }
     
-    /* Titoli e etichette generali nel corpo della pagina */
+    /* Titoli e testi su sfondo rosso */
     .stApp div[data-testid="stMarkdownContainer"] h1, 
     .stApp div[data-testid="stMarkdownContainer"] h2, 
     .stApp div[data-testid="stMarkdownContainer"] h3, 
     .stApp div[data-testid="stMarkdownContainer"] p,
-    .stApp label { 
+    .stApp label,
+    [data-testid="stMetricLabel"] p,
+    [data-testid="stMetricValue"] div { 
         color: #FFFDD0 !important; 
     }
     
-    /* Pulsante principale */
-    .stButton button { 
+    /* 1. PULSANTE PRINCIPALE (Testo nero su sfondo crema) */
+    .stButton button, .stButton button p { 
         color: #000000 !important; 
         background-color: #FFFDD0 !important; 
-        font-weight: bold; 
+        font-weight: bold !important; 
     }
     
-    /* CORREZIONE FONDAMENTALE: Casella di testo (Copia-Incolla) leggibile (Testo Nero su Sfondo Bianco) */
+    /* 2. BOX DI SUCCESSO / ERRORE (Frecce rosse: testo nero su sfondo chiaro) */
+    [data-testid="stAlert"] p, [data-testid="stAlert"] div {
+        color: #000000 !important;
+        font-weight: bold !important;
+    }
+
+    /* 3. BADGE QUOTA EQUA NELLE METRICHE (Testo verde scuro su sfondo chiaro) */
+    [data-testid="stMetricDelta"] div {
+        color: #09ab3b !important;
+        font-weight: bold !important;
+    }
+
+    /* 4. NOMI GIOCATORI EVIDENZIATI (Codice inline) */
+    code {
+        color: #B20000 !important;
+        background-color: #FFFDD0 !important;
+        font-weight: bold !important;
+    }
+    
+    /* 5. CASELLA DI TESTO COPIA-INCOLLA */
     [data-testid="stTextArea"] textarea {
         color: #000000 !important;
         background-color: #FFFFFF !important;
         -webkit-text-fill-color: #000000 !important;
-    }
-    [data-testid="stTextArea"] label {
-        color: #FFFDD0 !important;
     }
 
     /* Personalizzazione della Sidebar */
