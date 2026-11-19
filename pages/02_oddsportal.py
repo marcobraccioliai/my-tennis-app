@@ -398,7 +398,7 @@ st.caption("Analisi automatica in Piano A e Piano B per singolo incontro su più
 
 with st.sidebar:
     st.header("Parametri Modello & Cassa")
-    bankroll = st.number_input("Bankroll disponibile (€)", min_value=10.0, value=1000.0, step=50.0)
+    bankroll = st.number_input("Bankroll disponibile (€)", min_value=10.0, value=200.0, step=50.0)
     superficie = st.selectbox("Superficie", ["Terra battuta", "Cemento", "Erba"], index=0)
     soglia_edge_pct = st.slider(
         "Soglia minima Edge (%)", min_value=1.0, max_value=15.0, value=5.0, step=0.5
