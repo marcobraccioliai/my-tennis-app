@@ -6,6 +6,13 @@ import pandas as pd
 import streamlit as st
 
 # ==============================================================================
+# COSTANTI OPERATIVE FISSE (ALLINEATE A 01_CONVERTER_TENNIS.PY)
+# ==============================================================================
+SOGLIA_EDGE = 0.05      # Soglia minima Edge: 5.0%
+FRAZIONE_KELLY = 0.25   # Quarter-Kelly
+
+
+# ==============================================================================
 # 1. MOTORE DI SIMULAZIONE E CALCOLO (PIANO A & PIANO B)
 # ==============================================================================
 # Sostituisci/collega qui le funzioni del tuo 01_converter_tennis.py o modulo comune
@@ -75,8 +82,8 @@ def calcola_edge_e_stake(
     prob_win: float,
     quota: Optional[float],
     bankroll: float,
-    soglia_edge: float = 0.05,
-    frazione_kelly: float = 0.25,
+    soglia_edge: float = SOGLIA_EDGE,
+    frazione_kelly: float = FRAZIONE_KELLY,
 ) -> Dict[str, Any]:
     """
     Calcola Edge, Kelly frazionario e stake arrotondato.
@@ -128,8 +135,8 @@ def costruisci_tabella_piano(
     p1_win: float,
     p2_win: float,
     bankroll: float,
-    soglia_edge: float,
-    frazione_kelly: float,
+    soglia_edge: float = SOGLIA_EDGE,
+    frazione_kelly: float = FRAZIONE_KELLY,
 ) -> pd.DataFrame:
     """Costruisce e ordina per Edge decrescente la tabella multi-bookmaker per un piano."""
     tabella_risultati: List[Dict[str, Any]] = []
@@ -400,12 +407,6 @@ with st.sidebar:
     st.header("Parametri Modello & Cassa")
     bankroll = st.number_input("Bankroll disponibile (€)", min_value=10.0, value=200.0, step=10.0)
     superficie = st.selectbox("Superficie", ["Terra battuta", "Cemento", "Erba"], index=0)
-    soglia_edge_pct = st.slider(
-        "Soglia minima Edge (%)", min_value=1.0, max_value=15.0, value=5.0, step=0.5
-    )
-    frazione_kelly = st.slider(
-        "Frazione Kelly", min_value=0.10, max_value=1.00, value=0.25, step=0.05
-    )
     n_sim = st.select_slider(
         "Simulazioni Monte Carlo", options=[2000, 5000, 10000, 20000], value=10000
     )
@@ -465,8 +466,6 @@ if st.button("Simula Piano A e Piano B", type="primary"):
             n_simulazioni=n_sim,
         )
 
-        soglia_edge = soglia_edge_pct / 100.0
-
         df_piano_a = costruisci_tabella_piano(
             rows=parsed["rows"],
             g1=g1_clean,
@@ -474,8 +473,8 @@ if st.button("Simula Piano A e Piano B", type="primary"):
             p1_win=p1_a,
             p2_win=p2_a,
             bankroll=bankroll,
-            soglia_edge=soglia_edge,
-            frazione_kelly=frazione_kelly,
+            soglia_edge=SOGLIA_EDGE,
+            frazione_kelly=FRAZIONE_KELLY,
         )
         df_piano_b = costruisci_tabella_piano(
             rows=parsed["rows"],
@@ -484,8 +483,8 @@ if st.button("Simula Piano A e Piano B", type="primary"):
             p1_win=p1_b,
             p2_win=p2_b,
             bankroll=bankroll,
-            soglia_edge=soglia_edge,
-            frazione_kelly=frazione_kelly,
+            soglia_edge=SOGLIA_EDGE,
+            frazione_kelly=FRAZIONE_KELLY,
         )
 
         st.divider()
