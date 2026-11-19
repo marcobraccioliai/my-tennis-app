@@ -410,8 +410,6 @@ with st.sidebar:
         "Simulazioni Monte Carlo", options=[2000, 5000, 10000, 20000], value=10000
     )
 
-default_sample = 
-
 raw_input = st.text_area(
     "Incolla qui il testo copiato dalla pagina del singolo match",
     value=default_sample,
