@@ -372,11 +372,11 @@ def parse_oddsportal_match(raw_text: str) -> Dict[str, Any]:
 
     flush_row()
 
-    if not player_1 or not player_2:
+    if raw_text.strip() and (not player_1 or not player_2):
         warnings.append(
             "Nomi giocatori non rilevati automaticamente: puoi inserirli o verificarli nei campi qui sotto."
         )
-    if not rows:
+    if raw_text.strip() and not rows:
         warnings.append("Nessuna riga bookmaker/quote riconosciuta nel testo incollato.")
 
     return {
@@ -398,7 +398,7 @@ st.caption("Analisi automatica in Piano A e Piano B per singolo incontro su più
 
 with st.sidebar:
     st.header("Parametri Modello & Cassa")
-    bankroll = st.number_input("Bankroll disponibile (€)", min_value=10.0, value=1000.0, step=50.0)
+    bankroll = st.number_input("Bankroll disponibile (€)", min_value=10.0, value=200.0, step=10.0)
     superficie = st.selectbox("Superficie", ["Terra battuta", "Cemento", "Erba"], index=0)
     soglia_edge_pct = st.slider(
         "Soglia minima Edge (%)", min_value=1.0, max_value=15.0, value=5.0, step=0.5
@@ -410,44 +410,9 @@ with st.sidebar:
         "Simulazioni Monte Carlo", options=[2000, 5000, 10000, 20000], value=10000
     )
 
-default_sample = """Wendelken H.
--
-Blancaneaux G.
-Oggi,
-19 Nov 2026,
-18:30
-- Home/Away
-- Over/Under
-- Asian Handicap
-- Correct Score
-Finale1° Set2° SetTutti i bonus
-888sport
-
-
-richiedi bonus
-1.36
-3.00
-93.6%
-
-BetflagIT
-
-
-richiedi bonus
-1.36
-2.85
-92.1%
-
-BetssonIT
-
-
-richiedi bonus
-1.37
-2.95
-93.6%"""
-
 raw_input = st.text_area(
     "Incolla qui il testo copiato dalla pagina del singolo match",
-    value=default_sample,
+    value="",
     height=260,
 )
 
