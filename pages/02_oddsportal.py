@@ -410,40 +410,7 @@ with st.sidebar:
         "Simulazioni Monte Carlo", options=[2000, 5000, 10000, 20000], value=10000
     )
 
-default_sample = """Wendelken H.
--
-Blancaneaux G.
-Oggi,
-19 Nov 2026,
-18:30
-- Home/Away
-- Over/Under
-- Asian Handicap
-- Correct Score
-Finale1° Set2° SetTutti i bonus
-888sport
-
-
-richiedi bonus
-1.36
-3.00
-93.6%
-
-BetflagIT
-
-
-richiedi bonus
-1.36
-2.85
-92.1%
-
-BetssonIT
-
-
-richiedi bonus
-1.37
-2.95
-93.6%"""
+default_sample = 
 
 raw_input = st.text_area(
     "Incolla qui il testo copiato dalla pagina del singolo match",
