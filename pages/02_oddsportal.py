@@ -44,6 +44,31 @@ DATABASE_TENNISTI: Dict[str, Dict[str, Any]] = {
 }
 
 
+def badge_fonte_html(nome_giocatore: str, fonte: str) -> str:
+    """Restituisce un badge HTML colorato ad alta leggibilità per la provenienza dati."""
+    if fonte.startswith("DB Locale"):
+        bg = "#143D29"
+        border = "#00FF7F"
+        fg = "#00FF7F"
+        icona = "🟢"
+    elif fonte.startswith("Sackmann"):
+        bg = "#103247"
+        border = "#00D4FF"
+        fg = "#00D4FF"
+        icona = "🔵"
+    else:
+        bg = "#4A2E0B"
+        border = "#FFB347"
+        fg = "#FFB347"
+        icona = "🟠"
+    return (
+        f'<span style="display:inline-block; background-color:{bg}; color:{fg}; '
+        f'border:1px solid {border}; border-radius:6px; padding:4px 10px; '
+        f'font-size:13px; font-weight:bold; margin:3px 6px 3px 0;">'
+        f'{icona} {nome_giocatore}: {fonte}</span>'
+    )
+
+
 @st.cache_data(ttl=86400)
 def scarica_archivio_sackmann() -> Dict[str, Dict[str, str]]:
     urls = [
@@ -84,7 +109,7 @@ def estrai_dati_modello_A(nome_giocatore: str) -> Tuple[Dict[str, Any], str]:
             return dati, "DB Locale"
     return (
         {"serv": 0.64, "ret": 0.38, "bonus": {"Cemento": 0.0, "Terra Battuta": 0.0, "Erba": 0.0}},
-        "Default",
+        "Default (Circuito Base)",
     )
 
 
@@ -579,7 +604,10 @@ if st.button("Simula Piano A e Piano B", type="primary"):
 
         st.divider()
         st.subheader(f"🅰️ Tabella 1 · Piano A — {g1_clean} vs {g2_clean} ({surf_key})")
-        st.caption(f"Fonti Piano A: {g1_clean} [{src1_a}] · {g2_clean} [{src2_a}]")
+        st.markdown(
+            f"{badge_fonte_html(g1_clean, src1_a)} {badge_fonte_html(g2_clean, src2_a)}",
+            unsafe_allow_html=True,
+        )
         ca1, ca2 = st.columns(2)
         ca1.metric(f"Prob. Piano A · {g1_clean} (1)", f"{prob_1_a:.1f}%")
         ca2.metric(f"Prob. Piano A · {g2_clean} (2)", f"{prob_2_a:.1f}%")
@@ -587,7 +615,10 @@ if st.button("Simula Piano A e Piano B", type="primary"):
 
         st.divider()
         st.subheader(f"🅱️ Tabella 2 · Piano B — {g1_clean} vs {g2_clean} ({surf_key})")
-        st.caption(f"Fonti Piano B: {g1_clean} [{src1_b}] · {g2_clean} [{src2_b}]")
+        st.markdown(
+            f"{badge_fonte_html(g1_clean, src1_b)} {badge_fonte_html(g2_clean, src2_b)}",
+            unsafe_allow_html=True,
+        )
         cb1, cb2 = st.columns(2)
         cb1.metric(f"Prob. Piano B · {g1_clean} (1)", f"{prob_1_b:.1f}%")
         cb2.metric(f"Prob. Piano B · {g2_clean} (2)", f"{prob_2_b:.1f}%")
