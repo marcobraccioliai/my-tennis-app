@@ -84,6 +84,32 @@ DATABASE_TENNISTI = {
     "samsonova": {"serv": 0.66, "ret": 0.37, "bonus": {"Cemento": 0.015, "Terra Battuta": -0.01, "Erba": 0.015}}
 }
 
+
+def badge_fonte_html(nome_giocatore: str, fonte: str) -> str:
+    """Restituisce un badge HTML colorato ad alta leggibilità per la provenienza dati."""
+    if fonte.startswith("DB Locale"):
+        bg = "#143D29"
+        border = "#00FF7F"
+        fg = "#00FF7F"
+        icona = "🟢"
+    elif fonte.startswith("Sackmann"):
+        bg = "#103247"
+        border = "#00D4FF"
+        fg = "#00D4FF"
+        icona = "🔵"
+    else:
+        bg = "#4A2E0B"
+        border = "#FFB347"
+        fg = "#FFB347"
+        icona = "🟠"
+    return (
+        f'<span style="display:inline-block; background-color:{bg}; color:{fg}; '
+        f'border:1px solid {border}; border-radius:6px; padding:3px 8px; '
+        f'font-size:12px; font-weight:bold; margin:2px 4px 2px 0;">'
+        f'{icona} {nome_giocatore}: {fonte}</span>'
+    )
+
+
 # --- 🌐 INTEGRAZIONE ARCHIVIO JEFF SACKMANN (ATP + WTA) ---
 @st.cache_data(ttl=86400)
 def scarica_archivio_sackmann():
@@ -113,7 +139,7 @@ def estrai_dati_modello_A(nome_giocatore):
     for key in DATABASE_TENNISTI:
         if key in nome_pulito:
             return DATABASE_TENNISTI[key], "DB Locale"
-    return {"serv": 0.64, "ret": 0.38, "bonus": {"Cemento": 0.0, "Terra Battuta": 0.0, "Erba": 0.0}}, "Default"
+    return {"serv": 0.64, "ret": 0.38, "bonus": {"Cemento": 0.0, "Terra Battuta": 0.0, "Erba": 0.0}}, "Default (Circuito Base)"
 
 def estrai_dati_modello_B(nome_giocatore, quota_giocatore, quota_avversario, archivio_sackmann):
     nome_pulito = nome_giocatore.lower()
@@ -318,10 +344,20 @@ if st.button("🐾🐾🐾🐾"):
                     edge_1_B, stake_1_B, verdetto_1_B = valuta_scommessa(prob_1_B, curr_odd1, bankroll)
                     edge_2_B, stake_2_B, verdetto_2_B = valuta_scommessa(prob_2_B, curr_odd2, bankroll)
 
+                badges_mod_a = f"{badge_fonte_html(curr_p1, src1_A)} {badge_fonte_html(curr_p2, src2_A)}"
+                badges_mod_b = f"{badge_fonte_html(curr_p1, src1_B)} {badge_fonte_html(curr_p2, src2_B)}"
+
                 st.markdown(f"""
                     <div style="background-color: #1E1E1E; padding: 15px; border-radius: 8px; border: 2px solid #FFFDD0; margin-top: 15px;">
-                        <h3 style="color: #FFFDD0; margin-top:0;">Match #{idx}: {curr_p1} (@{curr_odd1}) vs {curr_p2} (@{curr_odd2})</h3>
-                        <span style="color: #A0A0A0; font-size: 12px;">Fonti Modello B: {curr_p1} [{src1_B}] | {curr_p2} [{src2_B}]</span>
+                        <h3 style="color: #FFFDD0; margin-top:0; margin-bottom:8px;">Match #{idx}: {curr_p1} (@{curr_odd1}) vs {curr_p2} (@{curr_odd2})</h3>
+                        <div style="margin-bottom:4px;">
+                            <span style="color: #FFD700; font-size: 12px; font-weight: bold;">Provenienza Piano A:</span><br>
+                            {badges_mod_a}
+                        </div>
+                        <div>
+                            <span style="color: #00FF7F; font-size: 12px; font-weight: bold;">Provenienza Piano B:</span><br>
+                            {badges_mod_b}
+                        </div>
                     </div>
                 """, unsafe_allow_html=True)
                 
@@ -362,8 +398,12 @@ if st.button("🐾🐾🐾🐾"):
                     "Match #": idx,
                     "Superficie": superficie,
                     "Giocatore 1": curr_p1,
+                    "Fonte ModA 1": src1_A,
+                    "Fonte ModB 1": src1_B,
                     "Quota SNAI 1": curr_odd1,
                     "Giocatore 2": curr_p2,
+                    "Fonte ModA 2": src2_A,
+                    "Fonte ModB 2": src2_B,
                     "Quota SNAI 2": curr_odd2,
                     "ModB Prob 1 (%)": round(prob_1_B, 1),
                     "ModB Equa 1": round(fair_1_B, 2),
