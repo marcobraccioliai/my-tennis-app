@@ -237,6 +237,7 @@ def costruisci_tabella_simulazioni_singoli(
     surf_fb = _normalizza_superficie(superficie_fallback)
 
     for idx, m in enumerate(singles):
+        ordine_pastone = m.get("Ordine Pastone", idx + 1)
         g1 = m["Giocatore 1"]
         g2 = m["Giocatore 2"]
         q1 = m["Quota 1"]
@@ -284,6 +285,8 @@ def costruisci_tabella_simulazioni_singoli(
 
         tabella_risultati.append(
             {
+                "Ordine": ordine_pastone,
+                "Rif. Pastone": m.get("Rif. Pastone", "-"),
                 "Giocatore 1": g1,
                 "Quota 1": q1,
                 "Giocatore 2": g2,
@@ -299,13 +302,14 @@ def costruisci_tabella_simulazioni_singoli(
                 "Edge (%)": round(best_edge, 2) if best_edge is not None else None,
                 "Stake (€)": best_stake,
                 "Esito": best_esito,
-                "_sort_edge": best_edge if best_edge is not None else -9999.0,
             }
         )
 
     if not tabella_risultati:
         return pd.DataFrame(
             columns=[
+                "Ordine",
+                "Rif. Pastone",
                 "Giocatore 1",
                 "Quota 1",
                 "Giocatore 2",
@@ -326,14 +330,13 @@ def costruisci_tabella_simulazioni_singoli(
 
     return (
         pd.DataFrame(tabella_risultati)
-        .sort_values(by="_sort_edge", ascending=False)
-        .drop(columns=["_sort_edge"])
+        .sort_values(by="Ordine", ascending=True)
         .reset_index(drop=True)
     )
 
 
 # ==============================================================================
-# 2. PARSER ELASTICO PER PASTONA GIORNALIERA ODDSPORTAL (SOLO SINGOLI)
+# 2. PARSER ELASTICO PER PASTONA GIORNALIERA ODDSPORTAL (SOLO SINGOLI NON INIZIATI)
 # ==============================================================================
 UI_NOISE_EXACT = {
     "quote scommesse tennis",
@@ -359,6 +362,8 @@ UI_NOISE_EXACT = {
     "eventiinizio partita",
     "finita",
 }
+
+TERMINATED_TOKENS = {"finita", "annullata", "rinviata", "sospesa", "ritirato", "walkover"}
 
 
 def _estrai_superficie_da_torneo(line: str) -> Optional[str]:
@@ -392,7 +397,7 @@ def _pulisci_quota_token(tok: str) -> Optional[float]:
 def _is_stato_o_punteggio(tok: str) -> bool:
     t = (tok or "").strip()
     low = t.lower()
-    if low in {"finita", "annullata", "rinviata", "sospesa", "ritirato", "walkover"}:
+    if low in TERMINATED_TOKENS or low == "live":
         return True
     if re.fullmatch(r"(?:\d{1,2})?\d{2}:\d{2}", t):
         return True
@@ -401,6 +406,21 @@ def _is_stato_o_punteggio(tok: str) -> bool:
     if re.fullmatch(r"[0123]", t):
         return True
     return False
+
+
+def _classifica_stato_match(marker: str) -> Tuple[str, str]:
+    """Restituisce (stato, motivo_esclusione): stato in {'NOT_STARTED', 'IN_PROGRESS', 'FINISHED'}."""
+    m = (marker or "").strip()
+    low = m.lower()
+    if not m or m == "-":
+        return "NOT_STARTED", ""
+    if low in TERMINATED_TOKENS:
+        return "FINISHED", f"Match già terminato/chiuso (marcatore '{m}')"
+    if low == "live" or re.fullmatch(r"(?:\d{1,2})?\d+S(?:T)?", m, re.IGNORECASE):
+        return "IN_PROGRESS", f"Match già iniziato o in corso (marcatore '{m}')"
+    if re.fullmatch(r"(?:\d{1,2})?\d{2}:\d{2}", m):
+        return "NOT_STARTED", ""
+    return "NOT_STARTED", ""
 
 
 def _is_nome_giocatore(s: str) -> bool:
@@ -433,10 +453,13 @@ def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
     current_surface: Optional[str] = None
     current_tournament: Optional[str] = None
     current_subheader: str = ""
+    last_marker_or_time: str = "-"
 
     singles_matches: List[Dict[str, Any]] = []
     doubles_matches: List[Dict[str, Any]] = []
+    started_or_finished_matches: List[Dict[str, str]] = []
     dirty_items: List[Dict[str, str]] = []
+    ordine_counter = 0
 
     i = 0
     n = len(lines)
@@ -483,14 +506,20 @@ def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
         if low in UI_NOISE_EXACT or low.startswith(("quote scommesse", "oggi", "domani", "ieri")):
             if low.startswith(("oggi", "domani", "ieri")):
                 current_subheader = ln
+            elif low in TERMINATED_TOKENS or low == "live":
+                last_marker_or_time = ln
             i += 1
             continue
 
         if _is_stato_o_punteggio(ln):
+            if not re.fullmatch(r"[0123]", ln):
+                last_marker_or_time = ln
             i += 1
             continue
 
         if _is_nome_giocatore(ln) and i + 2 < n and lines[i + 1] in {"-", ":"} and _is_nome_giocatore(lines[i + 2]):
+            ordine_counter += 1
+            rif_pastone = f"#{ordine_counter} ({last_marker_or_time})"
             g1 = ln
             sep = lines[i + 1]
             g2 = lines[i + 2]
@@ -519,34 +548,57 @@ def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
                 j += 1
 
             is_dbl, dbl_reason = _verifica_doppio(current_tournament or "", current_subheader, g1, g2)
+            stato_match, stato_reason = _classifica_stato_match(last_marker_or_time)
             terreno_effettivo = current_surface or "Cemento"
 
             if len(quotes) == 2:
-                record: Dict[str, Any] = {
-                    "Giocatore 1": g1,
-                    "Quota 1": quotes[0],
-                    "Giocatore 2": g2,
-                    "Quota 2": quotes[1],
-                    "Terreno": terreno_effettivo,
-                    "Torneo": current_tournament or "-",
-                }
                 if is_dbl:
-                    record["Motivo Esclusione"] = dbl_reason
-                    doubles_matches.append(record)
+                    doubles_matches.append(
+                        {
+                            "Rif. Pastone": rif_pastone,
+                            "Giocatore 1": g1,
+                            "Quota 1": quotes[0],
+                            "Giocatore 2": g2,
+                            "Quota 2": quotes[1],
+                            "Terreno": terreno_effettivo,
+                            "Torneo": current_tournament or "-",
+                            "Motivo Esclusione": dbl_reason,
+                        }
+                    )
+                elif stato_match != "NOT_STARTED":
+                    started_or_finished_matches.append(
+                        {
+                            "rif": rif_pastone,
+                            "match": f"{g1} {sep} {g2} ({quotes[0]} / {quotes[1]})",
+                            "torneo": current_tournament or "-",
+                            "motivo": stato_reason,
+                        }
+                    )
                 else:
-                    singles_matches.append(record)
+                    singles_matches.append(
+                        {
+                            "Ordine Pastone": ordine_counter,
+                            "Rif. Pastone": rif_pastone,
+                            "Giocatore 1": g1,
+                            "Quota 1": quotes[0],
+                            "Giocatore 2": g2,
+                            "Quota 2": quotes[1],
+                            "Terreno": terreno_effettivo,
+                            "Torneo": current_tournament or "-",
+                        }
+                    )
 
                 if bad_tokens:
                     dirty_items.append(
                         {
-                            "blocco_o_riga": f"{g1} {sep} {g2} (token anomali: {', '.join(bad_tokens)})",
-                            "motivo": "Match estratto con quote valide, ma rilevati token imprevisti durante la lettura.",
+                            "blocco_o_riga": f"{rif_pastone} · {g1} {sep} {g2} (token anomali: {', '.join(bad_tokens)})",
+                            "motivo": "Match con quote valide, ma rilevati token imprevisti durante la lettura.",
                         }
                     )
             else:
                 dirty_items.append(
                     {
-                        "blocco_o_riga": f"{g1} {sep} {g2}",
+                        "blocco_o_riga": f"{rif_pastone} · {g1} {sep} {g2}",
                         "motivo": f"Match incompleto: trovate {len(quotes)} quote valide su 2 attese (quote assenti o non leggibili).",
                     }
                 )
@@ -578,24 +630,40 @@ def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
     return {
         "singles": singles_matches,
         "doubles": doubles_matches,
+        "started_or_finished": started_or_finished_matches,
         "dirty": dirty_items,
     }
 
 
-def _render_scarti_courier_10pt(doubles: List[Dict[str, Any]], dirty: List[Dict[str, str]]) -> str:
-    """Formatta doppi esclusi e righe sporche in fondo alla pagina in Courier 10pt."""
+def _render_scarti_courier_10pt(
+    doubles: List[Dict[str, Any]],
+    started_or_finished: List[Dict[str, str]],
+    dirty: List[Dict[str, str]],
+) -> str:
+    """Formatta doppi esclusi, match già iniziati/terminati e righe sporche in Courier 10pt in fondo."""
     righe: List[str] = []
     righe.append("=== MATCH DI DOPPIO ESCLUSI ===")
     if doubles:
         for d in doubles:
             righe.append(
-                f"[DOPPIO] {d.get('Giocatore 1', '')} ({d.get('Quota 1', '-')}) vs "
+                f"[DOPPIO] {d.get('Rif. Pastone', '')} | {d.get('Giocatore 1', '')} ({d.get('Quota 1', '-')}) vs "
                 f"{d.get('Giocatore 2', '')} ({d.get('Quota 2', '-')}) | "
                 f"Terreno: {d.get('Terreno', '-')} | Torneo: {d.get('Torneo', '-')} | "
                 f"Motivo: {d.get('Motivo Esclusione', 'Doppio')}"
             )
     else:
         righe.append("(nessun match di doppio escluso)")
+
+    righe.append("")
+    righe.append("=== MATCH GIÀ INIZIATI / TERMINATI ESCLUSI ===")
+    if started_or_finished:
+        for s in started_or_finished:
+            righe.append(
+                f"[ESCLUSO] {s.get('rif', '')} | {s.get('match', '')} | "
+                f"Torneo: {s.get('torneo', '-')} | {s.get('motivo', '')}"
+            )
+    else:
+        righe.append("(nessun match già iniziato o terminato escluso)")
 
     righe.append("")
     righe.append("=== RIGHE / BLOCCHI SPORCHI SCARTATI ===")
@@ -620,10 +688,10 @@ def _render_scarti_courier_10pt(doubles: List[Dict[str, Any]], dirty: List[Dict[
 # 3. INTERFACCIA STREAMLIT (PAGES/03_ODDSPORTAL_TEST_150.PY - SIMULAZIONI PIANO B)
 # ==============================================================================
 st.set_page_config(page_title="03 - OddsPortal Test 150 (Piano B)", layout="wide")
-st.title("🎾 03 · Simulazioni Piano B su Pastone OddsPortal (Solo Singoli)")
+st.title("🎾 03 · Simulazioni Piano B su Pastone OddsPortal (Solo Singoli Non Iniziati)")
 st.caption(
-    "Estrazione elastica dei match singoli validi ed esecuzione Monte Carlo (Piano B) "
-    "con valutazione Value / No Value / Edge < 5%."
+    "Estrazione elastica dei match singoli non ancora iniziati nell'ordine del pastone "
+    "ed esecuzione Monte Carlo (Piano B) con valutazione Value / No Value / Edge < 5%."
 )
 
 with st.sidebar:
@@ -649,12 +717,14 @@ if st.button("Simula Match Singoli (Piano B)", type="primary"):
     else:
         singles = parsed["singles"]
         doubles = parsed["doubles"]
+        started_or_finished = parsed["started_or_finished"]
         dirty = parsed["dirty"]
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Match Singoli Simulati", len(singles))
-        c2.metric("Match Doppio Esclusi", len(doubles))
-        c3.metric("Righe / Blocchi Sporchi Scartati", len(dirty))
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Singoli Simulati (Non Iniziati)", len(singles))
+        c2.metric("Iniziati / Terminati Esclusi", len(started_or_finished))
+        c3.metric("Match Doppio Esclusi", len(doubles))
+        c4.metric("Righe / Blocchi Sporchi Scartati", len(dirty))
 
         if singles:
             archivio_sackmann = scarica_archivio_sackmann()
@@ -667,11 +737,10 @@ if st.button("Simula Match Singoli (Piano B)", type="primary"):
                 )
 
             st.divider()
-            st.subheader("🅱️ Tabella Risultati Simulazione Piano B (Match Singoli)")
+            st.subheader("🅱️ Tabella Risultati Simulazione Piano B (Singoli Non Iniziati · Ordine Pastone)")
             st.dataframe(df_sim, use_container_width=True, hide_index=True)
         else:
-            st.info("Nessun match singolo valido trovato da simulare.")
+            st.info("Nessun match singolo non ancora iniziato valido trovato da simulare.")
 
-        # In fondo a tutto, dopo le simulazioni: doppi e righe sporche in stile spartano Courier 10pt
         st.divider()
-        st.markdown(_render_scarti_courier_10pt(doubles, dirty), unsafe_allow_html=True)
+        st.markdown(_render_scarti_courier_10pt(doubles, started_or_finished, dirty), unsafe_allow_html=True)
