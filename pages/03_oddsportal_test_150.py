@@ -335,6 +335,25 @@ def costruisci_tabella_simulazioni_singoli(
     )
 
 
+def filtra_value_favorito_150(df_sim: pd.DataFrame) -> pd.DataFrame:
+    """
+    Restituisce il sottoinsieme identico di righe in cui:
+    - Esito == 'VALUE BET'
+    - La quota del favorito del match (min tra Quota 1 e Quota 2) è >= 1.50
+    """
+    if df_sim is None or df_sim.empty:
+        return pd.DataFrame(columns=df_sim.columns if df_sim is not None else [])
+
+    q1 = pd.to_numeric(df_sim["Quota 1"], errors="coerce")
+    q2 = pd.to_numeric(df_sim["Quota 2"], errors="coerce")
+    quota_favorito = pd.concat([q1, q2], axis=1).min(axis=1)
+
+    cond_value = df_sim["Esito"] == "VALUE BET"
+    cond_fav_150 = quota_favorito >= 1.50
+
+    return df_sim[cond_value & cond_fav_150].copy().reset_index(drop=True)
+
+
 # ==============================================================================
 # 2. PARSER ELASTICO PER PASTONA GIORNALIERA ODDSPORTAL (SOLO SINGOLI NON INIZIATI)
 # ==============================================================================
@@ -744,6 +763,11 @@ if st.button("Simula Match Singoli (Piano B)", type="primary"):
             st.divider()
             st.subheader("🅱️ Tabella Risultati Simulazione Piano B (Singoli Non Iniziati · Ordine Pastone)")
             st.dataframe(df_sim, use_container_width=True, hide_index=True)
+
+            df_filtered = filtra_value_favorito_150(df_sim)
+            st.divider()
+            st.subheader("🎯 Sottoinsieme VALUE BET con Favorito ≥ 1.50")
+            st.dataframe(df_filtered, use_container_width=True, hide_index=True)
         else:
             st.info("Nessun match singolo non ancora iniziato valido trovato da simulare.")
 
