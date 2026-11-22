@@ -289,4 +289,363 @@ def _normalizza_superficie(superficie: str) -> str:
 #
 #         tabella_risultati.append(
 #             {
-#                 "Bookmaker": r["Bookmaker
+#                 "Bookmaker": r["Bookmaker"],
+#                 "Payout": r["Payout"],
+#                 f"Q1 ({g1})": r["Quota 1"],
+#                 f"Q2 ({g2})": r["Quota 2"],
+#                 "Miglior Lato": best_side,
+#                 "Quota Scelta": best_quota,
+#                 "Quota Equa": best_fair,
+#                 "Prob. Modello (%)": round(best_prob, 1),
+#                 "Edge (%)": round(best_edge, 2) if best_edge is not None else None,
+#                 "Stake (€)": best_stake,
+#                 "Esito": best_esito,
+#                 "_sort_edge": best_edge if best_edge is not None else -9999.0,
+#             }
+#         )
+#
+#     return (
+#         pd.DataFrame(tabella_risultati)
+#         .sort_values(by="_sort_edge", ascending=False)
+#         .drop(columns=["_sort_edge"])
+#         .reset_index(drop=True)
+#     )
+# --- FINE SIMULAZIONI MONTE CARLO PIANO B (COMMENTATE) ---
+
+
+# ==============================================================================
+# 2. PARSER ELASTICO PER PASTONA GIORNALIERA ODDSPORTAL (SOLO SINGOLI + DIAGNOSTICA)
+# ==============================================================================
+UI_NOISE_EXACT = {
+    "quote scommesse tennis",
+    "tutte le partite",
+    "live",
+    "tutte le partitelive",
+    "oggi",
+    "domani",
+    "ieri",
+    "- le mie partite",
+    "- calcio",
+    "- tennis",
+    "- basket",
+    "- pallavolo",
+    "le mie partite",
+    "calcio",
+    "basket",
+    "pallavolo",
+    "di più",
+    "eventi",
+    "inizio partita",
+    "nascondi eventi conclusi",
+    "eventiinizio partita",
+    "finita",
+}
+
+
+def _estrai_superficie_da_torneo(line: str) -> Optional[str]:
+    m = re.search(r"\(([^)]+)\)\s*$", (line or "").strip())
+    if not m:
+        return None
+    val = m.group(1).strip().lower()
+    if "terra" in val:
+        return "Terra Battuta"
+    if "erba" in val:
+        return "Erba"
+    if "cemento" in val or "hard" in val:
+        return "Cemento"
+    return val.title()
+
+
+def _pulisci_quota_token(tok: str) -> Optional[float]:
+    t = (tok or "").strip()
+    if t.startswith("-"):
+        t = t[1:].strip()
+    if not t:
+        return None
+    t = t.replace(",", ".")
+    # Accetta quote decimali (es. 1.41, 12.00) evitando punteggi interi isolati (0, 1, 2, 3)
+    if re.fullmatch(r"\d+\.\d+", t):
+        val = float(t)
+        if 1.0 <= val <= 500.0:
+            return val
+    return None
+
+
+def _is_stato_o_punteggio(tok: str) -> bool:
+    t = (tok or "").strip()
+    low = t.lower()
+    if low in {"finita", "annullata", "rinviata", "sospesa", "ritirato", "walkover"}:
+        return True
+    if re.fullmatch(r"(?:\d{1,2})?\d{2}:\d{2}", t):
+        return True
+    if re.fullmatch(r"(?:\d{1,2})?\d+S(?:T)?", t, re.IGNORECASE):
+        return True
+    if re.fullmatch(r"[0123]", t):
+        return True
+    return False
+
+
+def _is_nome_giocatore(s: str) -> bool:
+    s_clean = (s or "").strip()
+    if not s_clean or s_clean in {"-", ":"} or len(s_clean) < 2:
+        return False
+    low = s_clean.lower()
+    if low in UI_NOISE_EXACT or low.startswith(("quote scommesse", "oggi", "domani", "ieri")):
+        return False
+    if _is_stato_o_punteggio(s_clean):
+        return False
+    if re.fullmatch(r"-?\s*\d+(?:[.,]\d+)?", s_clean):
+        return False
+    return bool(re.search(r"[A-Za-zÀ-ÿ]", s_clean))
+
+
+def _verifica_doppio(torneo: str, sottotitolo: str, g1: str, g2: str) -> Tuple[bool, str]:
+    if "/" in (g1 or "") or "/" in (g2 or ""):
+        return True, "Nomi con '/' (coppia di doppio)"
+    t_low = (torneo or "").lower()
+    s_low = (sottotitolo or "").lower()
+    if re.search(r"\bdoppi[oa]?\b", t_low) or re.search(r"\bdoppi[oa]?\b", s_low):
+        return True, "Intestazione torneo/fase indicata come Doppio/Doppi"
+    return False, ""
+
+
+def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
+    lines = [ln.strip() for ln in (raw_text or "").splitlines() if ln.strip()]
+
+    current_surface: Optional[str] = None
+    current_tournament: Optional[str] = None
+    current_subheader: str = ""
+
+    singles_matches: List[Dict[str, Any]] = []
+    doubles_matches: List[Dict[str, Any]] = []
+    dirty_items: List[Dict[str, str]] = []
+
+    i = 0
+    n = len(lines)
+    while i < n:
+        ln = lines[i]
+        low = ln.lower()
+
+        if ln == "/":
+            i += 1
+            continue
+
+        # Pattern intestazione torneo: 'Tennis' -> (opzionale '/') -> Paese -> (opzionale '/') -> Torneo
+        if low == "tennis" and i + 1 < n and (lines[i + 1] == "/" or _is_nome_giocatore(lines[i + 1])):
+            k = i + 1
+            if k < n and lines[k] == "/":
+                k += 1
+            country = lines[k] if k < n else ""
+            k += 1
+            if k < n and lines[k] == "/":
+                k += 1
+            tourn = lines[k] if k < n else ""
+
+            if country and tourn and not tourn.lower().startswith(("oggi", "domani", "ieri")):
+                surf = _estrai_superficie_da_torneo(tourn)
+                current_tournament = f"{tourn} ({country})"
+                current_subheader = ""
+                if k + 1 < n and lines[k + 1].lower().startswith(("oggi", "domani", "ieri")):
+                    current_subheader = lines[k + 1]
+                    k += 1
+                if surf:
+                    current_surface = surf
+                else:
+                    dirty_items.append(
+                        {
+                            "blocco_o_riga": f"{ln} / {country} / {tourn}",
+                            "motivo": (
+                                f"Superficie non rilevata tra parentesi nell'intestazione del torneo "
+                                f"(ereditata/fallback: {current_surface or 'Cemento'})."
+                            ),
+                        }
+                    )
+                i = k + 1
+                continue
+
+        if low in UI_NOISE_EXACT or low.startswith(("quote scommesse", "oggi", "domani", "ieri")):
+            if low.startswith(("oggi", "domani", "ieri")):
+                current_subheader = ln
+            i += 1
+            continue
+
+        if _is_stato_o_punteggio(ln):
+            i += 1
+            continue
+
+        # Tentativo di match: Giocatore 1, ('-' o ':'), Giocatore 2
+        if _is_nome_giocatore(ln) and i + 2 < n and lines[i + 1] in {"-", ":"} and _is_nome_giocatore(lines[i + 2]):
+            g1 = ln
+            sep = lines[i + 1]
+            g2 = lines[i + 2]
+            j = i + 3
+            quotes: List[float] = []
+            bad_tokens: List[str] = []
+
+            while j < n and len(quotes) < 2:
+                tok = lines[j]
+                tok_low = tok.lower()
+
+                # Interruzione se inizia un nuovo blocco torneo o un nuovo match
+                if tok_low == "tennis" and j + 1 < n and (lines[j + 1] == "/" or _is_nome_giocatore(lines[j + 1])):
+                    break
+                if _is_nome_giocatore(tok) and j + 2 < n and lines[j + 1] in {"-", ":"} and _is_nome_giocatore(lines[j + 2]):
+                    break
+
+                q = _pulisci_quota_token(tok)
+                if q is not None:
+                    quotes.append(q)
+                elif (
+                    tok != "-"
+                    and not _is_stato_o_punteggio(tok)
+                    and not tok_low.startswith(("oggi", "domani", "ieri"))
+                ):
+                    bad_tokens.append(tok)
+                j += 1
+
+            is_dbl, dbl_reason = _verifica_doppio(current_tournament or "", current_subheader, g1, g2)
+            terreno_effettivo = current_surface or "Cemento"
+
+            if len(quotes) == 2:
+                record: Dict[str, Any] = {
+                    "Giocatore 1": g1,
+                    "Quota 1": quotes[0],
+                    "Giocatore 2": g2,
+                    "Quota 2": quotes[1],
+                    "Terreno": terreno_effettivo,
+                    "Torneo": current_tournament or "-",
+                }
+                if is_dbl:
+                    record["Motivo Esclusione"] = dbl_reason
+                    doubles_matches.append(record)
+                else:
+                    singles_matches.append(record)
+
+                if bad_tokens:
+                    dirty_items.append(
+                        {
+                            "blocco_o_riga": f"{g1} {sep} {g2} (token anomali: {', '.join(bad_tokens)})",
+                            "motivo": "Match estratto con quote valide, ma rilevati token imprevisti durante la lettura.",
+                        }
+                    )
+            else:
+                dirty_items.append(
+                    {
+                        "blocco_o_riga": f"{g1} {sep} {g2}",
+                        "motivo": f"Match incompleto: trovate {len(quotes)} quote valide su 2 attese (quote assenti o non leggibili).",
+                    }
+                )
+
+            i = j
+            continue
+
+        if ln == "-":
+            dash_start = i
+            while i < n and lines[i] == "-":
+                i += 1
+            count_d = i - dash_start
+            dirty_items.append(
+                {
+                    "blocco_o_riga": " / ".join(["-"] * count_d),
+                    "motivo": f"Sequenza di {count_d} separatore/i '-' isolato/i senza nomi giocatori o quote associate.",
+                }
+            )
+            continue
+
+        dirty_items.append(
+            {
+                "blocco_o_riga": ln,
+                "motivo": "Riga non riconosciuta come intestazione torneo, match o rumore noto di interfaccia.",
+            }
+        )
+        i += 1
+
+    return {
+        "singles": singles_matches,
+        "doubles": doubles_matches,
+        "dirty": dirty_items,
+    }
+
+
+# ==============================================================================
+# 3. INTERFACCIA STREAMLIT (PAGES/03_ODDSPORTAL_TEST_150.PY - TEST PARSER)
+# ==============================================================================
+st.set_page_config(page_title="03 - OddsPortal Test 150 (Parser Pastone)", layout="wide")
+st.title("🎾 03 · Parser Pastone Giornaliero OddsPortal (Solo Singoli)")
+st.caption(
+    "Estrazione elastica di Giocatore 1, Quota 1, Giocatore 2, Quota 2 e Terreno. "
+    "Simulazioni Monte Carlo temporaneamente commentate per validare il parser."
+)
+
+with st.sidebar:
+    st.header("Parametri Modello & Cassa")
+    bankroll = st.number_input("Bankroll disponibile (€)", min_value=10.0, value=200.0, step=10.0)
+    superficie = st.selectbox("Superficie fallback", ["Cemento", "Terra Battuta", "Erba"], index=0)
+    n_sim = st.select_slider(
+        "Simulazioni Monte Carlo",
+        options=[20000, 50000, 100000, 200000],
+        value=DEFAULT_N_SIM,
+    )
+    st.info("Simulazioni disattivate/commentate in questa fase di test del parser.")
+
+raw_input = st.text_area(
+    "Incolla qui il pastone completo della pagina iniziale del tennis di OddsPortal",
+    value="",
+    height=320,
+)
+
+parsed = parse_pastone_oddsportal(raw_input)
+
+if st.button("Analizza Pastone (Solo Parser)", type="primary"):
+    if not raw_input.strip():
+        st.warning("Incolla prima il testo del pastone di OddsPortal.")
+    else:
+        singles = parsed["singles"]
+        doubles = parsed["doubles"]
+        dirty = parsed["dirty"]
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Match Singoli Estratti", len(singles))
+        c2.metric("Match Doppio Esclusi", len(doubles))
+        c3.metric("Segnalazioni / Righe Sporche", len(dirty))
+
+        st.divider()
+        st.subheader("🎾 Match Singoli Estratti (Pronti per il modello)")
+        if singles:
+            df_singles = pd.DataFrame(singles)[
+                ["Giocatore 1", "Quota 1", "Giocatore 2", "Quota 2", "Terreno", "Torneo"]
+            ]
+            st.dataframe(df_singles, use_container_width=True, hide_index=True)
+        else:
+            st.info("Nessun match singolo valido estratto.")
+
+        st.divider()
+        st.subheader("👥 Match di Doppio Trovati ed Esclusi")
+        if doubles:
+            df_doubles = pd.DataFrame(doubles)[
+                ["Giocatore 1", "Quota 1", "Giocatore 2", "Quota 2", "Terreno", "Torneo", "Motivo Esclusione"]
+            ]
+            st.dataframe(df_doubles, use_container_width=True, hide_index=True)
+        else:
+            st.info("Nessun match di doppio rilevato nel testo.")
+
+        st.divider()
+        st.subheader("⚠️ Righe / Blocchi Sporchi o Segnalazioni di Troubleshooting")
+        if dirty:
+            df_dirty = pd.DataFrame(dirty)[["blocco_o_riga", "motivo"]]
+            st.dataframe(df_dirty, use_container_width=True, hide_index=True)
+        else:
+            st.success("Nessuna riga sporca o anomalia rilevata.")
+
+        # --- BLOCCO SIMULAZIONI MONTE CARLO COMMENTATO TEMPORANEAMENTE ---
+        # surf_key = _normalizza_superficie(superficie)
+        # archivio_sackmann = scarica_archivio_sackmann()
+        # for m in singles:
+        #     terreno_match = m.get("Terreno") or surf_key
+        #     s1_b, src1_b = estrai_dati_modello_B(m["Giocatore 1"], m["Quota 1"], m["Quota 2"], archivio_sackmann)
+        #     s2_b, src2_b = estrai_dati_modello_B(m["Giocatore 2"], m["Quota 2"], m["Quota 1"], archivio_sackmann)
+        #     p_serv_1_b = float(np.clip(((s1_b["serv"] + (1.0 - s2_b["ret"])) / 2.0) + s1_b["bonus"][terreno_match], 0.05, 0.95))
+        #     p_serv_2_b = float(np.clip(((s2_b["serv"] + (1.0 - s1_b["ret"])) / 2.0) + s2_b["bonus"][terreno_match], 0.05, 0.95))
+        #     prob_1_b = esegui_monte_carlo(p_serv_1_b, p_serv_2_b, n_sim=n_sim, seed=1042)
+        #     prob_2_b = 100.0 - prob_1_b
+        # --- FINE BLOCCO SIMULAZIONI COMMENTATO ---
