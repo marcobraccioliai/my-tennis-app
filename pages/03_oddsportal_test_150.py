@@ -17,7 +17,7 @@ DEFAULT_N_SIM = 200000  # Allineato a 01_converter_tennis.py
 
 
 # ==============================================================================
-# 1. DATABASE, ARCHIVIO JEFF SACKMANN E MOTORE MONTE CARLO (PIANO B - COMMENTATO)
+# 1. DATABASE, ARCHIVIO JEFF SACKMANN E MOTORE MONTE CARLO (SOLO PIANO B)
 # ==============================================================================
 DATABASE_TENNISTI: Dict[str, Dict[str, Any]] = {
     "sinner": {"serv": 0.70, "ret": 0.43, "bonus": {"Cemento": 0.015, "Terra Battuta": 0.00, "Erba": 0.01}},
@@ -42,31 +42,6 @@ DATABASE_TENNISTI: Dict[str, Dict[str, Any]] = {
     "romero gormaz": {"serv": 0.59, "ret": 0.40, "bonus": {"Cemento": -0.01, "Terra Battuta": 0.02, "Erba": -0.02}},
     "samsonova": {"serv": 0.66, "ret": 0.37, "bonus": {"Cemento": 0.015, "Terra Battuta": -0.01, "Erba": 0.015}},
 }
-
-
-def badge_fonte_html(nome_giocatore: str, fonte: str) -> str:
-    """Restituisce un badge HTML colorato ad alta leggibilità per la provenienza dati."""
-    if fonte.startswith("DB Locale"):
-        bg = "#143D29"
-        border = "#00FF7F"
-        fg = "#00FF7F"
-        icona = "🟢"
-    elif fonte.startswith("Sackmann"):
-        bg = "#103247"
-        border = "#00D4FF"
-        fg = "#00D4FF"
-        icona = "🔵"
-    else:
-        bg = "#4A2E0B"
-        border = "#FFB347"
-        fg = "#FFB347"
-        icona = "🟠"
-    return (
-        f'<span style="display:inline-block; background-color:{bg}; color:{fg}; '
-        f'border:1px solid {border}; border-radius:6px; padding:4px 10px; '
-        f'font-size:13px; font-weight:bold; margin:3px 6px 3px 0;">'
-        f'{icona} {nome_giocatore}: {fonte}</span>'
-    )
 
 
 @st.cache_data(ttl=86400)
@@ -102,219 +77,262 @@ def _normalizza_superficie(superficie: str) -> str:
     return "Cemento"
 
 
-# --- SIMULAZIONI MONTE CARLO PIANO B (COMMENTATE TEMPORANEAMENTE PER TEST PARSER) ---
-# def estrai_dati_modello_B(
-#     nome_giocatore: str,
-#     quota_giocatore: float,
-#     quota_avversario: float,
-#     archivio_sackmann: Dict[str, Dict[str, str]],
-# ) -> Tuple[Dict[str, Any], str]:
-#     nome_pulito = nome_giocatore.lower()
-#     for key, dati in DATABASE_TENNISTI.items():
-#         if key in nome_pulito:
-#             return dati, "DB Locale"
-#
-#     trovato_sackmann = False
-#     info_player = ""
-#     for cognome_ws, dati in archivio_sackmann.items():
-#         if cognome_ws in nome_pulito:
-#             trovato_sackmann = True
-#             info_player = f"{dati['nome_completo']} ({dati['paese']})"
-#             break
-#
-#     prob_mercato = (1.0 / quota_giocatore) / ((1.0 / quota_giocatore) + (1.0 / quota_avversario))
-#     correzione = (prob_mercato - 0.50) * 0.08
-#     serv_stimato = float(np.clip(0.61 + correzione, 0.53, 0.68))
-#     ret_stimato = float(np.clip(0.37 + correzione, 0.30, 0.44))
-#
-#     etichetta = f"Sackmann ({info_player})" if trovato_sackmann else "Stima Circuito (Market)"
-#     return (
-#         {
-#             "serv": serv_stimato,
-#             "ret": ret_stimato,
-#             "bonus": {"Cemento": 0.0, "Terra Battuta": 0.0, "Erba": 0.0},
-#         },
-#         etichetta,
-#     )
-#
-#
-# def simula_punto(p_serv: float, rng: np.random.Generator) -> bool:
-#     return bool(rng.random() < p_serv)
-#
-#
-# def simula_game(p_serv: float, rng: np.random.Generator) -> bool:
-#     punti_serv, punti_risp = 0, 0
-#     while True:
-#         if punti_serv >= 3 and punti_risp >= 3:
-#             p1, p2 = simula_punto(p_serv, rng), simula_punto(p_serv, rng)
-#             if p1 and p2:
-#                 return True
-#             if not p1 and not p2:
-#                 return False
-#         else:
-#             if simula_punto(p_serv, rng):
-#                 punti_serv += 1
-#             else:
-#                 punti_risp += 1
-#             if punti_serv >= 4 and punti_serv - punti_risp >= 2:
-#                 return True
-#             if punti_risp >= 4 and punti_risp - punti_serv >= 2:
-#                 return False
-#
-#
-# def simula_tiebreak(p_serv_1: float, p_serv_2: float, rng: np.random.Generator) -> bool:
-#     p1_pts, p2_pts = 0, 0
-#     while True:
-#         serv_1 = ((p1_pts + p2_pts) // 1) % 2 == 0
-#         p_curr = p_serv_1 if serv_1 else (1.0 - p_serv_2)
-#         if simula_punto(p_curr, rng):
-#             p1_pts += 1
-#         else:
-#             p2_pts += 1
-#         if (p1_pts >= 7 or p2_pts >= 7) and abs(p1_pts - p2_pts) >= 2:
-#             return p1_pts > p2_pts
-#
-#
-# def simula_set(p_serv_1: float, p_serv_2: float, rng: np.random.Generator) -> bool:
-#     g1, g2 = 0, 0
-#     while True:
-#         t1 = (g1 + g2) % 2 == 0
-#         p_curr = p_serv_1 if t1 else (1.0 - p_serv_2)
-#         vince_g1 = simula_game(p_curr, rng) if t1 else not simula_game(1.0 - p_serv_2, rng)
-#         if t1 and vince_g1:
-#             g1 += 1
-#         elif t1 and not vince_g1:
-#             g2 += 1
-#         elif not t1 and not vince_g1:
-#             g1 += 1
-#         else:
-#             g2 += 1
-#         if g1 == 6 and g2 == 6:
-#             return simula_tiebreak(p_serv_1, p_serv_2, rng)
-#         if (g1 >= 6 or g2 >= 6) and abs(g1 - g2) >= 2:
-#             return g1 > g2
-#
-#
-# def esegui_monte_carlo(
-#     p_serv_1: float,
-#     p_serv_2: float,
-#     n_sim: int = DEFAULT_N_SIM,
-#     seed: int = 1042,
-# ) -> float:
-#     rng = np.random.default_rng(seed)
-#     vittorie_1 = 0
-#     for _ in range(n_sim):
-#         s1, s2 = 0, 0
-#         while s1 < 2 and s2 < 2:
-#             if simula_set(p_serv_1, p_serv_2, rng):
-#                 s1 += 1
-#             else:
-#                 s2 += 1
-#         if s1 == 2:
-#             vittorie_1 += 1
-#     return (vittorie_1 / n_sim) * 100.0
-#
-#
-# def arrotonda_per_snai(importo_euro: float) -> float:
-#     if importo_euro < 1.0:
-#         return 0.0
-#     return round(max(1.0, round(importo_euro / 0.05) * 0.05), 2)
-#
-#
-# def valuta_scommessa(
-#     prob_percentuale: float,
-#     quota_bookmaker: Optional[float],
-#     bankroll: float,
-#     frazione: float = FRAZIONE_KELLY,
-#     edge_minimo: float = SOGLIA_EDGE,
-# ) -> Tuple[Optional[float], float, str]:
-#     if quota_bookmaker is None or quota_bookmaker <= 1.0:
-#         return None, 0.0, "Quota non disp."
-#
-#     p = prob_percentuale / 100.0
-#     q = 1.0 - p
-#     b = quota_bookmaker - 1.0
-#     if b <= 0:
-#         return None, 0.0, "No Value"
-#
-#     edge = (p * quota_bookmaker) - 1.0
-#     if edge <= 0:
-#         return edge * 100.0, 0.0, "No Value"
-#     if edge < edge_minimo:
-#         return edge * 100.0, 0.0, "Stai fermo (Edge < 5%)"
-#
-#     kelly_pieno = (b * p - q) / b
-#     stake_euro = arrotonda_per_snai(bankroll * (kelly_pieno * frazione))
-#     if stake_euro <= 0:
-#         return edge * 100.0, 0.0, "Stai fermo (< 1.00€)"
-#
-#     return edge * 100.0, stake_euro, "VALUE BET"
-#
-#
-# def costruisci_tabella_piano(
-#     rows: List[Dict[str, Any]],
-#     g1: str,
-#     g2: str,
-#     prob_1_pct: float,
-#     prob_2_pct: float,
-#     bankroll: float,
-# ) -> pd.DataFrame:
-#     tabella_risultati: List[Dict[str, Any]] = []
-#     fair_1 = round(100.0 / prob_1_pct, 2) if prob_1_pct > 0 else None
-#     fair_2 = round(100.0 / prob_2_pct, 2) if prob_2_pct > 0 else None
-#
-#     for r in rows:
-#         edge_1, stake_1, verdetto_1 = valuta_scommessa(prob_1_pct, r["Quota 1"], bankroll)
-#         edge_2, stake_2, verdetto_2 = valuta_scommessa(prob_2_pct, r["Quota 2"], bankroll)
-#
-#         e1_cmp = edge_1 if edge_1 is not None else -9999.0
-#         e2_cmp = edge_2 if edge_2 is not None else -9999.0
-#
-#         if e1_cmp >= e2_cmp:
-#             best_side = f"1 · {g1}"
-#             best_quota = r["Quota 1"]
-#             best_prob = prob_1_pct
-#             best_fair = fair_1
-#             best_edge = edge_1
-#             best_stake = stake_1
-#             best_esito = verdetto_1
-#         else:
-#             best_side = f"2 · {g2}"
-#             best_quota = r["Quota 2"]
-#             best_prob = prob_2_pct
-#             best_fair = fair_2
-#             best_edge = edge_2
-#             best_stake = stake_2
-#             best_esito = verdetto_2
-#
-#         tabella_risultati.append(
-#             {
-#                 "Bookmaker": r["Bookmaker"],
-#                 "Payout": r["Payout"],
-#                 f"Q1 ({g1})": r["Quota 1"],
-#                 f"Q2 ({g2})": r["Quota 2"],
-#                 "Miglior Lato": best_side,
-#                 "Quota Scelta": best_quota,
-#                 "Quota Equa": best_fair,
-#                 "Prob. Modello (%)": round(best_prob, 1),
-#                 "Edge (%)": round(best_edge, 2) if best_edge is not None else None,
-#                 "Stake (€)": best_stake,
-#                 "Esito": best_esito,
-#                 "_sort_edge": best_edge if best_edge is not None else -9999.0,
-#             }
-#         )
-#
-#     return (
-#         pd.DataFrame(tabella_risultati)
-#         .sort_values(by="_sort_edge", ascending=False)
-#         .drop(columns=["_sort_edge"])
-#         .reset_index(drop=True)
-#     )
-# --- FINE SIMULAZIONI MONTE CARLO PIANO B (COMMENTATE) ---
+def estrai_dati_modello_B(
+    nome_giocatore: str,
+    quota_giocatore: float,
+    quota_avversario: float,
+    archivio_sackmann: Dict[str, Dict[str, str]],
+) -> Tuple[Dict[str, Any], str]:
+    nome_pulito = nome_giocatore.lower()
+    for key, dati in DATABASE_TENNISTI.items():
+        if key in nome_pulito:
+            return dati, "DB Locale"
+
+    trovato_sackmann = False
+    info_player = ""
+    for cognome_ws, dati in archivio_sackmann.items():
+        if cognome_ws in nome_pulito:
+            trovato_sackmann = True
+            info_player = f"{dati['nome_completo']} ({dati['paese']})"
+            break
+
+    prob_mercato = (1.0 / quota_giocatore) / ((1.0 / quota_giocatore) + (1.0 / quota_avversario))
+    correzione = (prob_mercato - 0.50) * 0.08
+    serv_stimato = float(np.clip(0.61 + correzione, 0.53, 0.68))
+    ret_stimato = float(np.clip(0.37 + correzione, 0.30, 0.44))
+
+    etichetta = f"Sackmann ({info_player})" if trovato_sackmann else "Stima Circuito (Market)"
+    return (
+        {
+            "serv": serv_stimato,
+            "ret": ret_stimato,
+            "bonus": {"Cemento": 0.0, "Terra Battuta": 0.0, "Erba": 0.0},
+        },
+        etichetta,
+    )
+
+
+def simula_punto(p_serv: float, rng: np.random.Generator) -> bool:
+    return bool(rng.random() < p_serv)
+
+
+def simula_game(p_serv: float, rng: np.random.Generator) -> bool:
+    punti_serv, punti_risp = 0, 0
+    while True:
+        if punti_serv >= 3 and punti_risp >= 3:
+            p1, p2 = simula_punto(p_serv, rng), simula_punto(p_serv, rng)
+            if p1 and p2:
+                return True
+            if not p1 and not p2:
+                return False
+        else:
+            if simula_punto(p_serv, rng):
+                punti_serv += 1
+            else:
+                punti_risp += 1
+            if punti_serv >= 4 and punti_serv - punti_risp >= 2:
+                return True
+            if punti_risp >= 4 and punti_risp - punti_serv >= 2:
+                return False
+
+
+def simula_tiebreak(p_serv_1: float, p_serv_2: float, rng: np.random.Generator) -> bool:
+    p1_pts, p2_pts = 0, 0
+    while True:
+        serv_1 = ((p1_pts + p2_pts) // 1) % 2 == 0
+        p_curr = p_serv_1 if serv_1 else (1.0 - p_serv_2)
+        if simula_punto(p_curr, rng):
+            p1_pts += 1
+        else:
+            p2_pts += 1
+        if (p1_pts >= 7 or p2_pts >= 7) and abs(p1_pts - p2_pts) >= 2:
+            return p1_pts > p2_pts
+
+
+def simula_set(p_serv_1: float, p_serv_2: float, rng: np.random.Generator) -> bool:
+    g1, g2 = 0, 0
+    while True:
+        t1 = (g1 + g2) % 2 == 0
+        p_curr = p_serv_1 if t1 else (1.0 - p_serv_2)
+        vince_g1 = simula_game(p_curr, rng) if t1 else not simula_game(1.0 - p_serv_2, rng)
+        if t1 and vince_g1:
+            g1 += 1
+        elif t1 and not vince_g1:
+            g2 += 1
+        elif not t1 and not vince_g1:
+            g1 += 1
+        else:
+            g2 += 1
+        if g1 == 6 and g2 == 6:
+            return simula_tiebreak(p_serv_1, p_serv_2, rng)
+        if (g1 >= 6 or g2 >= 6) and abs(g1 - g2) >= 2:
+            return g1 > g2
+
+
+def esegui_monte_carlo(
+    p_serv_1: float,
+    p_serv_2: float,
+    n_sim: int = DEFAULT_N_SIM,
+    seed: int = 1042,
+) -> float:
+    rng = np.random.default_rng(seed)
+    vittorie_1 = 0
+    for _ in range(n_sim):
+        s1, s2 = 0, 0
+        while s1 < 2 and s2 < 2:
+            if simula_set(p_serv_1, p_serv_2, rng):
+                s1 += 1
+            else:
+                s2 += 1
+        if s1 == 2:
+            vittorie_1 += 1
+    return (vittorie_1 / n_sim) * 100.0
+
+
+def arrotonda_per_snai(importo_euro: float) -> float:
+    if importo_euro < 1.0:
+        return 0.0
+    return round(max(1.0, round(importo_euro / 0.05) * 0.05), 2)
+
+
+def valuta_scommessa(
+    prob_percentuale: float,
+    quota_bookmaker: Optional[float],
+    bankroll: float,
+    frazione: float = FRAZIONE_KELLY,
+    edge_minimo: float = SOGLIA_EDGE,
+) -> Tuple[Optional[float], float, str]:
+    if quota_bookmaker is None or quota_bookmaker <= 1.0:
+        return None, 0.0, "Quota non disp."
+
+    p = prob_percentuale / 100.0
+    q = 1.0 - p
+    b = quota_bookmaker - 1.0
+    if b <= 0:
+        return None, 0.0, "No Value"
+
+    edge = (p * quota_bookmaker) - 1.0
+    if edge <= 0:
+        return edge * 100.0, 0.0, "No Value"
+    if edge < edge_minimo:
+        return edge * 100.0, 0.0, "Stai fermo (Edge < 5%)"
+
+    kelly_pieno = (b * p - q) / b
+    stake_euro = arrotonda_per_snai(bankroll * (kelly_pieno * frazione))
+    if stake_euro <= 0:
+        return edge * 100.0, 0.0, "Stai fermo (< 1.00€)"
+
+    return edge * 100.0, stake_euro, "VALUE BET"
+
+
+def costruisci_tabella_simulazioni_singoli(
+    singles: List[Dict[str, Any]],
+    archivio_sackmann: Dict[str, Dict[str, str]],
+    superficie_fallback: str,
+    bankroll: float,
+    n_sim: int,
+) -> pd.DataFrame:
+    tabella_risultati: List[Dict[str, Any]] = []
+    surf_fb = _normalizza_superficie(superficie_fallback)
+
+    for idx, m in enumerate(singles):
+        g1 = m["Giocatore 1"]
+        g2 = m["Giocatore 2"]
+        q1 = m["Quota 1"]
+        q2 = m["Quota 2"]
+        surf_key = _normalizza_superficie(m.get("Terreno") or surf_fb)
+
+        s1_b, src1_b = estrai_dati_modello_B(g1, q1, q2, archivio_sackmann)
+        s2_b, src2_b = estrai_dati_modello_B(g2, q2, q1, archivio_sackmann)
+
+        p_serv_1_b = float(
+            np.clip(((s1_b["serv"] + (1.0 - s2_b["ret"])) / 2.0) + s1_b["bonus"].get(surf_key, 0.0), 0.05, 0.95)
+        )
+        p_serv_2_b = float(
+            np.clip(((s2_b["serv"] + (1.0 - s1_b["ret"])) / 2.0) + s2_b["bonus"].get(surf_key, 0.0), 0.05, 0.95)
+        )
+
+        prob_1_b = esegui_monte_carlo(p_serv_1_b, p_serv_2_b, n_sim=n_sim, seed=1042 + idx)
+        prob_2_b = 100.0 - prob_1_b
+
+        fair_1 = round(100.0 / prob_1_b, 2) if prob_1_b > 0 else None
+        fair_2 = round(100.0 / prob_2_b, 2) if prob_2_b > 0 else None
+
+        edge_1, stake_1, verdetto_1 = valuta_scommessa(prob_1_b, q1, bankroll)
+        edge_2, stake_2, verdetto_2 = valuta_scommessa(prob_2_b, q2, bankroll)
+
+        e1_cmp = edge_1 if edge_1 is not None else -9999.0
+        e2_cmp = edge_2 if edge_2 is not None else -9999.0
+
+        if e1_cmp >= e2_cmp:
+            best_side = f"1 · {g1}"
+            best_quota = q1
+            best_prob = prob_1_b
+            best_fair = fair_1
+            best_edge = edge_1
+            best_stake = stake_1
+            best_esito = verdetto_1
+        else:
+            best_side = f"2 · {g2}"
+            best_quota = q2
+            best_prob = prob_2_b
+            best_fair = fair_2
+            best_edge = edge_2
+            best_stake = stake_2
+            best_esito = verdetto_2
+
+        tabella_risultati.append(
+            {
+                "Giocatore 1": g1,
+                "Quota 1": q1,
+                "Giocatore 2": g2,
+                "Quota 2": q2,
+                "Terreno": surf_key,
+                "Torneo": m.get("Torneo", "-"),
+                "Fonte G1": src1_b,
+                "Fonte G2": src2_b,
+                "Miglior Lato": best_side,
+                "Quota Scelta": best_quota,
+                "Quota Equa": best_fair,
+                "Prob. Modello (%)": round(best_prob, 1),
+                "Edge (%)": round(best_edge, 2) if best_edge is not None else None,
+                "Stake (€)": best_stake,
+                "Esito": best_esito,
+                "_sort_edge": best_edge if best_edge is not None else -9999.0,
+            }
+        )
+
+    if not tabella_risultati:
+        return pd.DataFrame(
+            columns=[
+                "Giocatore 1",
+                "Quota 1",
+                "Giocatore 2",
+                "Quota 2",
+                "Terreno",
+                "Torneo",
+                "Fonte G1",
+                "Fonte G2",
+                "Miglior Lato",
+                "Quota Scelta",
+                "Quota Equa",
+                "Prob. Modello (%)",
+                "Edge (%)",
+                "Stake (€)",
+                "Esito",
+            ]
+        )
+
+    return (
+        pd.DataFrame(tabella_risultati)
+        .sort_values(by="_sort_edge", ascending=False)
+        .drop(columns=["_sort_edge"])
+        .reset_index(drop=True)
+    )
 
 
 # ==============================================================================
-# 2. PARSER ELASTICO PER PASTONA GIORNALIERA ODDSPORTAL (SOLO SINGOLI + DIAGNOSTICA)
+# 2. PARSER ELASTICO PER PASTONA GIORNALIERA ODDSPORTAL (SOLO SINGOLI)
 # ==============================================================================
 UI_NOISE_EXACT = {
     "quote scommesse tennis",
@@ -363,7 +381,6 @@ def _pulisci_quota_token(tok: str) -> Optional[float]:
     if not t:
         return None
     t = t.replace(",", ".")
-    # Accetta quote decimali (es. 1.41, 12.00) evitando punteggi interi isolati (0, 1, 2, 3)
     if re.fullmatch(r"\d+\.\d+", t):
         val = float(t)
         if 1.0 <= val <= 500.0:
@@ -430,7 +447,6 @@ def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
             i += 1
             continue
 
-        # Pattern intestazione torneo: 'Tennis' -> (opzionale '/') -> Paese -> (opzionale '/') -> Torneo
         if low == "tennis" and i + 1 < n and (lines[i + 1] == "/" or _is_nome_giocatore(lines[i + 1])):
             k = i + 1
             if k < n and lines[k] == "/":
@@ -473,7 +489,6 @@ def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
             i += 1
             continue
 
-        # Tentativo di match: Giocatore 1, ('-' o ':'), Giocatore 2
         if _is_nome_giocatore(ln) and i + 2 < n and lines[i + 1] in {"-", ":"} and _is_nome_giocatore(lines[i + 2]):
             g1 = ln
             sep = lines[i + 1]
@@ -486,7 +501,6 @@ def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
                 tok = lines[j]
                 tok_low = tok.lower()
 
-                # Interruzione se inizia un nuovo blocco torneo o un nuovo match
                 if tok_low == "tennis" and j + 1 < n and (lines[j + 1] == "/" or _is_nome_giocatore(lines[j + 1])):
                     break
                 if _is_nome_giocatore(tok) and j + 2 < n and lines[j + 1] in {"-", ":"} and _is_nome_giocatore(lines[j + 2]):
@@ -568,13 +582,13 @@ def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
 
 
 # ==============================================================================
-# 3. INTERFACCIA STREAMLIT (PAGES/03_ODDSPORTAL_TEST_150.PY - TEST PARSER)
+# 3. INTERFACCIA STREAMLIT (PAGES/03_ODDSPORTAL_TEST_150.PY - SIMULAZIONI PIANO B)
 # ==============================================================================
-st.set_page_config(page_title="03 - OddsPortal Test 150 (Parser Pastone)", layout="wide")
-st.title("🎾 03 · Parser Pastone Giornaliero OddsPortal (Solo Singoli)")
+st.set_page_config(page_title="03 - OddsPortal Test 150 (Piano B)", layout="wide")
+st.title("🎾 03 · Simulazioni Piano B su Pastone OddsPortal (Solo Singoli)")
 st.caption(
-    "Estrazione elastica di Giocatore 1, Quota 1, Giocatore 2, Quota 2 e Terreno. "
-    "Simulazioni Monte Carlo temporaneamente commentate per validare il parser."
+    "Estrazione elastica dei match singoli validi ed esecuzione Monte Carlo (Piano B) "
+    "con valutazione Value / No Value / Edge < 5%."
 )
 
 with st.sidebar:
@@ -586,17 +600,16 @@ with st.sidebar:
         options=[20000, 50000, 100000, 200000],
         value=DEFAULT_N_SIM,
     )
-    st.info("Simulazioni disattivate/commentate in questa fase di test del parser.")
 
 raw_input = st.text_area(
-    "Incolla qui il pastone completo della pagina iniziale del tennis di OddsPortal",
+    "Incolla qui il pastone della pagina iniziale del tennis di OddsPortal",
     value="",
     height=320,
 )
 
 parsed = parse_pastone_oddsportal(raw_input)
 
-if st.button("Analizza Pastone (Solo Parser)", type="primary"):
+if st.button("Simula Match Singoli (Piano B)", type="primary"):
     if not raw_input.strip():
         st.warning("Incolla prima il testo del pastone di OddsPortal.")
     else:
@@ -605,47 +618,23 @@ if st.button("Analizza Pastone (Solo Parser)", type="primary"):
         dirty = parsed["dirty"]
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("Match Singoli Estratti", len(singles))
+        c1.metric("Match Singoli Simulati", len(singles))
         c2.metric("Match Doppio Esclusi", len(doubles))
-        c3.metric("Segnalazioni / Righe Sporche", len(dirty))
+        c3.metric("Righe / Blocchi Sporchi Ignorati", len(dirty))
 
-        st.divider()
-        st.subheader("🎾 Match Singoli Estratti (Pronti per il modello)")
         if singles:
-            df_singles = pd.DataFrame(singles)[
-                ["Giocatore 1", "Quota 1", "Giocatore 2", "Quota 2", "Terreno", "Torneo"]
-            ]
-            st.dataframe(df_singles, use_container_width=True, hide_index=True)
-        else:
-            st.info("Nessun match singolo valido estratto.")
+            archivio_sackmann = scarica_archivio_sackmann()
+            with st.spinner(f"Esecuzione Piano B ({n_sim:,} simulazioni per match) su {len(singles)} singoli..."):
+                df_sim = costruisci_tabella_simulazioni_singoli(
+                    singles=singles,
+                    archivio_sackmann=archivio_sackmann,
+                    superficie_fallback=superficie,
+                    bankroll=bankroll,
+                    n_sim=n_sim,
+                )
 
-        st.divider()
-        st.subheader("👥 Match di Doppio Trovati ed Esclusi")
-        if doubles:
-            df_doubles = pd.DataFrame(doubles)[
-                ["Giocatore 1", "Quota 1", "Giocatore 2", "Quota 2", "Terreno", "Torneo", "Motivo Esclusione"]
-            ]
-            st.dataframe(df_doubles, use_container_width=True, hide_index=True)
+            st.divider()
+            st.subheader("🅱️ Tabella Risultati Simulazione Piano B (Match Singoli)")
+            st.dataframe(df_sim, use_container_width=True, hide_index=True)
         else:
-            st.info("Nessun match di doppio rilevato nel testo.")
-
-        st.divider()
-        st.subheader("⚠️ Righe / Blocchi Sporchi o Segnalazioni di Troubleshooting")
-        if dirty:
-            df_dirty = pd.DataFrame(dirty)[["blocco_o_riga", "motivo"]]
-            st.dataframe(df_dirty, use_container_width=True, hide_index=True)
-        else:
-            st.success("Nessuna riga sporca o anomalia rilevata.")
-
-        # --- BLOCCO SIMULAZIONI MONTE CARLO COMMENTATO TEMPORANEAMENTE ---
-        # surf_key = _normalizza_superficie(superficie)
-        # archivio_sackmann = scarica_archivio_sackmann()
-        # for m in singles:
-        #     terreno_match = m.get("Terreno") or surf_key
-        #     s1_b, src1_b = estrai_dati_modello_B(m["Giocatore 1"], m["Quota 1"], m["Quota 2"], archivio_sackmann)
-        #     s2_b, src2_b = estrai_dati_modello_B(m["Giocatore 2"], m["Quota 2"], m["Quota 1"], archivio_sackmann)
-        #     p_serv_1_b = float(np.clip(((s1_b["serv"] + (1.0 - s2_b["ret"])) / 2.0) + s1_b["bonus"][terreno_match], 0.05, 0.95))
-        #     p_serv_2_b = float(np.clip(((s2_b["serv"] + (1.0 - s1_b["ret"])) / 2.0) + s2_b["bonus"][terreno_match], 0.05, 0.95))
-        #     prob_1_b = esegui_monte_carlo(p_serv_1_b, p_serv_2_b, n_sim=n_sim, seed=1042)
-        #     prob_2_b = 100.0 - prob_1_b
-        # --- FINE BLOCCO SIMULAZIONI COMMENTATO ---
+            st.info("Nessun match singolo valido trovato da simulare.")
