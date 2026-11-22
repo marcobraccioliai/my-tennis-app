@@ -1,4 +1,5 @@
 import csv
+import html
 import io
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -228,9 +229,9 @@ def valuta_scommessa(
 def costruisci_tabella_simulazioni_singoli(
     singles: List[Dict[str, Any]],
     archivio_sackmann: Dict[str, Dict[str, str]],
-    superficie_fallback: str,
     bankroll: float,
     n_sim: int,
+    superficie_fallback: str = "Cemento",
 ) -> pd.DataFrame:
     tabella_risultati: List[Dict[str, Any]] = []
     surf_fb = _normalizza_superficie(superficie_fallback)
@@ -581,6 +582,40 @@ def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
     }
 
 
+def _render_scarti_courier_10pt(doubles: List[Dict[str, Any]], dirty: List[Dict[str, str]]) -> str:
+    """Formatta doppi esclusi e righe sporche in fondo alla pagina in Courier 10pt."""
+    righe: List[str] = []
+    righe.append("=== MATCH DI DOPPIO ESCLUSI ===")
+    if doubles:
+        for d in doubles:
+            righe.append(
+                f"[DOPPIO] {d.get('Giocatore 1', '')} ({d.get('Quota 1', '-')}) vs "
+                f"{d.get('Giocatore 2', '')} ({d.get('Quota 2', '-')}) | "
+                f"Terreno: {d.get('Terreno', '-')} | Torneo: {d.get('Torneo', '-')} | "
+                f"Motivo: {d.get('Motivo Esclusione', 'Doppio')}"
+            )
+    else:
+        righe.append("(nessun match di doppio escluso)")
+
+    righe.append("")
+    righe.append("=== RIGHE / BLOCCHI SPORCHI SCARTATI ===")
+    if dirty:
+        for item in dirty:
+            righe.append(
+                f"[SPORCO] {item.get('blocco_o_riga', '')} -> {item.get('motivo', '')}"
+            )
+    else:
+        righe.append("(nessuna riga sporca scartata)")
+
+    testo_escaped = html.escape("\n".join(righe))
+    return (
+        '<div style="font-family: \'Courier New\', Courier, monospace; font-size: 10pt; '
+        'line-height: 1.35; color: #888888; background-color: #111111; '
+        'border: 1px dashed #444444; padding: 10px; margin-top: 12px; white-space: pre-wrap;">'
+        f"{testo_escaped}</div>"
+    )
+
+
 # ==============================================================================
 # 3. INTERFACCIA STREAMLIT (PAGES/03_ODDSPORTAL_TEST_150.PY - SIMULAZIONI PIANO B)
 # ==============================================================================
@@ -594,7 +629,6 @@ st.caption(
 with st.sidebar:
     st.header("Parametri Modello & Cassa")
     bankroll = st.number_input("Bankroll disponibile (€)", min_value=10.0, value=200.0, step=10.0)
-    superficie = st.selectbox("Superficie fallback", ["Cemento", "Terra Battuta", "Erba"], index=0)
     n_sim = st.select_slider(
         "Simulazioni Monte Carlo",
         options=[20000, 50000, 100000, 200000],
@@ -620,7 +654,7 @@ if st.button("Simula Match Singoli (Piano B)", type="primary"):
         c1, c2, c3 = st.columns(3)
         c1.metric("Match Singoli Simulati", len(singles))
         c2.metric("Match Doppio Esclusi", len(doubles))
-        c3.metric("Righe / Blocchi Sporchi Ignorati", len(dirty))
+        c3.metric("Righe / Blocchi Sporchi Scartati", len(dirty))
 
         if singles:
             archivio_sackmann = scarica_archivio_sackmann()
@@ -628,7 +662,6 @@ if st.button("Simula Match Singoli (Piano B)", type="primary"):
                 df_sim = costruisci_tabella_simulazioni_singoli(
                     singles=singles,
                     archivio_sackmann=archivio_sackmann,
-                    superficie_fallback=superficie,
                     bankroll=bankroll,
                     n_sim=n_sim,
                 )
@@ -638,3 +671,7 @@ if st.button("Simula Match Singoli (Piano B)", type="primary"):
             st.dataframe(df_sim, use_container_width=True, hide_index=True)
         else:
             st.info("Nessun match singolo valido trovato da simulare.")
+
+        # In fondo a tutto, dopo le simulazioni: doppi e righe sporche in stile spartano Courier 10pt
+        st.divider()
+        st.markdown(_render_scarti_courier_10pt(doubles, dirty), unsafe_allow_html=True)
