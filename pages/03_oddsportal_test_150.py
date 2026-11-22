@@ -94,32 +94,57 @@ def _normalizza_superficie(superficie: str) -> str:
     return "Cemento"
 
 
-def _estrai_data_da_intestazione(testo: str, data_riferimento: date) -> Optional[str]:
+def _estrai_data_da_testo(testo: str, data_riferimento: date) -> Optional[str]:
+    """
+    Estrae una data esplicita da una riga del pastone (es. '24 novembre 2026',
+    '24 Nov 2026', '24/11', '24/11/2026', oppure 'domani'/'ieri').
+    """
     if not testo:
         return None
     low = testo.strip().lower()
 
-    m = re.search(r"\b(\d{1,2})\s+([a-zà-ÿ]+)\b", low)
-    if m:
-        giorno = int(m.group(1))
-        mese = MESI_IT.get(m.group(2))
-        if mese and 1 <= giorno <= 31:
+    m_slash = re.search(r"\b(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b", low)
+    if m_slash:
+        giorno = int(m_slash.group(1))
+        mese = int(m_slash.group(2))
+        anno_raw = m_slash.group(3)
+        if anno_raw:
+            anno = int(anno_raw)
+            if anno < 100:
+                anno += 2000
+        else:
             anno = data_riferimento.year
             if data_riferimento.month == 12 and mese == 1:
                 anno += 1
             elif data_riferimento.month == 1 and mese == 12:
                 anno -= 1
+        if 1 <= mese <= 12 and 1 <= giorno <= 31:
             try:
                 return date(anno, mese, giorno).isoformat()
             except ValueError:
-                return None
+                pass
+
+    m_txt = re.search(r"\b(\d{1,2})\s+([a-zà-ÿ]+)(?:\s+(\d{4}))?\b", low)
+    if m_txt:
+        giorno = int(m_txt.group(1))
+        mese = MESI_IT.get(m_txt.group(2))
+        anno_raw = m_txt.group(3)
+        if mese and 1 <= giorno <= 31:
+            anno = int(anno_raw) if anno_raw else data_riferimento.year
+            if not anno_raw:
+                if data_riferimento.month == 12 and mese == 1:
+                    anno += 1
+                elif data_riferimento.month == 1 and mese == 12:
+                    anno -= 1
+            try:
+                return date(anno, mese, giorno).isoformat()
+            except ValueError:
+                pass
 
     if "domani" in low:
         return (data_riferimento + timedelta(days=1)).isoformat()
     if "ieri" in low:
         return (data_riferimento - timedelta(days=1)).isoformat()
-    if "oggi" in low:
-        return data_riferimento.isoformat()
     return None
 
 
@@ -441,6 +466,7 @@ UI_NOISE_EXACT = {
     "nascondi eventi conclusi",
     "eventiinizio partita",
     "finita",
+    "arrow",
 }
 
 TERMINATED_TOKENS = {"finita", "annullata", "rinviata", "sospesa", "ritirato", "walkover"}
@@ -517,6 +543,8 @@ def _is_nome_giocatore(s: str) -> bool:
         return False
     if re.fullmatch(r"-?\s*\d+(?:[.,]\d+)?", s_clean):
         return False
+    if _estrai_data_da_testo(s_clean, date.today()) and not re.search(r"\b[A-Za-zÀ-ÿ]{2,}\.", s_clean):
+        return False
     return bool(re.search(r"[A-Za-zÀ-ÿ]", s_clean))
 
 
@@ -556,6 +584,15 @@ def parse_pastone_oddsportal(raw_text: str, data_riferimento: date) -> Dict[str,
             i += 1
             continue
 
+        # Se la riga riporta una data esplicita (es. '24 novembre 2026', '24 Nov 2026', '24/11', 'domani')
+        data_riga = _estrai_data_da_testo(ln, data_riferimento)
+        if data_riga and not (low == "tennis" and i + 1 < n and (lines[i + 1] == "/" or _is_nome_giocatore(lines[i + 1]))):
+            current_date_str = data_riga
+            if low.startswith(("oggi", "domani", "ieri")):
+                current_subheader = ln
+            i += 1
+            continue
+
         if low == "tennis" and i + 1 < n and (lines[i + 1] == "/" or _is_nome_giocatore(lines[i + 1])):
             k = i + 1
             if k < n and lines[k] == "/":
@@ -570,13 +607,14 @@ def parse_pastone_oddsportal(raw_text: str, data_riferimento: date) -> Dict[str,
                 surf = _estrai_superficie_da_torneo(tourn)
                 current_tournament = f"{tourn} ({country})"
                 current_subheader = ""
-                current_date_str = data_default_str
-                if k + 1 < n and lines[k + 1].lower().startswith(("oggi", "domani", "ieri")):
-                    current_subheader = lines[k + 1]
-                    parsed_dt = _estrai_data_da_intestazione(current_subheader, data_riferimento)
-                    if parsed_dt:
-                        current_date_str = parsed_dt
-                    k += 1
+                if k + 1 < n:
+                    next_ln = lines[k + 1]
+                    next_dt = _estrai_data_da_testo(next_ln, data_riferimento)
+                    if next_dt or next_ln.lower().startswith(("oggi", "domani", "ieri")):
+                        current_subheader = next_ln
+                        if next_dt:
+                            current_date_str = next_dt
+                        k += 1
                 if surf:
                     current_surface = surf
                 else:
@@ -595,7 +633,7 @@ def parse_pastone_oddsportal(raw_text: str, data_riferimento: date) -> Dict[str,
         if low in UI_NOISE_EXACT or low.startswith(("quote scommesse", "oggi", "domani", "ieri")):
             if low.startswith(("oggi", "domani", "ieri")):
                 current_subheader = ln
-                parsed_dt = _estrai_data_da_intestazione(ln, data_riferimento)
+                parsed_dt = _estrai_data_da_testo(ln, data_riferimento)
                 if parsed_dt:
                     current_date_str = parsed_dt
             elif low in TERMINATED_TOKENS or low == "live":
@@ -793,7 +831,7 @@ st.caption(
 
 with st.sidebar:
     st.header("Parametri Modello & Cassa")
-    data_riferimento = st.date_input("Data di riferimento pastone", value=date.today())
+    data_riferimento = st.date_input("Data di fallback pastone", value=date.today())
     bankroll = st.number_input("Bankroll disponibile (€)", min_value=10.0, value=200.0, step=10.0)
     n_sim = st.select_slider(
         "Simulazioni Monte Carlo",
