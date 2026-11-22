@@ -1,4 +1,5 @@
 import csv
+from datetime import date, timedelta
 import html
 import io
 import re
@@ -15,6 +16,21 @@ import streamlit as st
 SOGLIA_EDGE = 0.05      # Soglia minima Edge: 5.0%
 FRAZIONE_KELLY = 0.25   # Quarter-Kelly
 DEFAULT_N_SIM = 200000  # Allineato a 01_converter_tennis.py
+
+MESI_IT: Dict[str, int] = {
+    "gen": 1, "gennaio": 1,
+    "feb": 2, "febbraio": 2,
+    "mar": 3, "marzo": 3,
+    "apr": 4, "aprile": 4,
+    "mag": 5, "maggio": 5,
+    "giu": 6, "giugno": 6,
+    "lug": 7, "luglio": 7,
+    "ago": 8, "agosto": 8,
+    "set": 9, "sett": 9, "settembre": 9,
+    "ott": 10, "ottobre": 10,
+    "nov": 11, "novembre": 11,
+    "dic": 12, "dicembre": 12,
+}
 
 
 # ==============================================================================
@@ -76,6 +92,35 @@ def _normalizza_superficie(superficie: str) -> str:
     if "erba" in low:
         return "Erba"
     return "Cemento"
+
+
+def _estrai_data_da_intestazione(testo: str, data_riferimento: date) -> Optional[str]:
+    if not testo:
+        return None
+    low = testo.strip().lower()
+
+    m = re.search(r"\b(\d{1,2})\s+([a-zà-ÿ]+)\b", low)
+    if m:
+        giorno = int(m.group(1))
+        mese = MESI_IT.get(m.group(2))
+        if mese and 1 <= giorno <= 31:
+            anno = data_riferimento.year
+            if data_riferimento.month == 12 and mese == 1:
+                anno += 1
+            elif data_riferimento.month == 1 and mese == 12:
+                anno -= 1
+            try:
+                return date(anno, mese, giorno).isoformat()
+            except ValueError:
+                return None
+
+    if "domani" in low:
+        return (data_riferimento + timedelta(days=1)).isoformat()
+    if "ieri" in low:
+        return (data_riferimento - timedelta(days=1)).isoformat()
+    if "oggi" in low:
+        return data_riferimento.isoformat()
+    return None
 
 
 def estrai_dati_modello_B(
@@ -231,6 +276,7 @@ def costruisci_tabella_simulazioni_singoli(
     archivio_sackmann: Dict[str, Dict[str, str]],
     bankroll: float,
     n_sim: int,
+    data_default: str,
     superficie_fallback: str = "Cemento",
 ) -> pd.DataFrame:
     tabella_risultati: List[Dict[str, Any]] = []
@@ -286,6 +332,7 @@ def costruisci_tabella_simulazioni_singoli(
         tabella_risultati.append(
             {
                 "Ordine": ordine_pastone,
+                "Data": m.get("Data") or data_default,
                 "Rif. Pastone": m.get("Rif. Pastone", "-"),
                 "Giocatore 1": g1,
                 "Quota 1": q1,
@@ -309,6 +356,7 @@ def costruisci_tabella_simulazioni_singoli(
         return pd.DataFrame(
             columns=[
                 "Ordine",
+                "Data",
                 "Rif. Pastone",
                 "Giocatore 1",
                 "Quota 1",
@@ -482,12 +530,14 @@ def _verifica_doppio(torneo: str, sottotitolo: str, g1: str, g2: str) -> Tuple[b
     return False, ""
 
 
-def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
+def parse_pastone_oddsportal(raw_text: str, data_riferimento: date) -> Dict[str, Any]:
     lines = [ln.strip() for ln in (raw_text or "").splitlines() if ln.strip()]
+    data_default_str = data_riferimento.isoformat()
 
     current_surface: Optional[str] = None
     current_tournament: Optional[str] = None
     current_subheader: str = ""
+    current_date_str: str = data_default_str
     last_marker_or_time: str = "-"
 
     singles_matches: List[Dict[str, Any]] = []
@@ -520,8 +570,12 @@ def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
                 surf = _estrai_superficie_da_torneo(tourn)
                 current_tournament = f"{tourn} ({country})"
                 current_subheader = ""
+                current_date_str = data_default_str
                 if k + 1 < n and lines[k + 1].lower().startswith(("oggi", "domani", "ieri")):
                     current_subheader = lines[k + 1]
+                    parsed_dt = _estrai_data_da_intestazione(current_subheader, data_riferimento)
+                    if parsed_dt:
+                        current_date_str = parsed_dt
                     k += 1
                 if surf:
                     current_surface = surf
@@ -541,6 +595,9 @@ def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
         if low in UI_NOISE_EXACT or low.startswith(("quote scommesse", "oggi", "domani", "ieri")):
             if low.startswith(("oggi", "domani", "ieri")):
                 current_subheader = ln
+                parsed_dt = _estrai_data_da_intestazione(ln, data_riferimento)
+                if parsed_dt:
+                    current_date_str = parsed_dt
             elif low in TERMINATED_TOKENS or low == "live":
                 last_marker_or_time = ln
             i += 1
@@ -590,6 +647,7 @@ def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
                 if is_dbl:
                     doubles_matches.append(
                         {
+                            "Data": current_date_str,
                             "Rif. Pastone": rif_pastone,
                             "Giocatore 1": g1,
                             "Quota 1": quotes[0],
@@ -603,6 +661,7 @@ def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
                 elif stato_match != "NOT_STARTED":
                     started_or_finished_matches.append(
                         {
+                            "data": current_date_str,
                             "rif": rif_pastone,
                             "categoria": cat_breve,
                             "match": f"{g1} {sep} {g2} ({quotes[0]} / {quotes[1]})",
@@ -614,6 +673,7 @@ def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
                     singles_matches.append(
                         {
                             "Ordine Pastone": ordine_counter,
+                            "Data": current_date_str,
                             "Rif. Pastone": rif_pastone,
                             "Giocatore 1": g1,
                             "Quota 1": quotes[0],
@@ -682,7 +742,7 @@ def _render_scarti_courier_10pt(
     if doubles:
         for d in doubles:
             righe.append(
-                f"[DOPPIO] {d.get('Rif. Pastone', '')} | {d.get('Giocatore 1', '')} ({d.get('Quota 1', '-')}) vs "
+                f"[DOPPIO] {d.get('Data', '-')} | {d.get('Rif. Pastone', '')} | {d.get('Giocatore 1', '')} ({d.get('Quota 1', '-')}) vs "
                 f"{d.get('Giocatore 2', '')} ({d.get('Quota 2', '-')}) | "
                 f"Terreno: {d.get('Terreno', '-')} | Torneo: {d.get('Torneo', '-')} | "
                 f"Motivo: {d.get('Motivo Esclusione', 'Doppio')}"
@@ -696,7 +756,7 @@ def _render_scarti_courier_10pt(
         for s in started_or_finished:
             cat = s.get("categoria", "TERMINATA / IN CORSO")
             righe.append(
-                f"[{cat}] {s.get('rif', '')} | {s.get('match', '')} | "
+                f"[{cat}] {s.get('data', '-')} | {s.get('rif', '')} | {s.get('match', '')} | "
                 f"Torneo: {s.get('torneo', '-')} | {s.get('motivo', '')}"
             )
     else:
@@ -733,6 +793,7 @@ st.caption(
 
 with st.sidebar:
     st.header("Parametri Modello & Cassa")
+    data_riferimento = st.date_input("Data di riferimento pastone", value=date.today())
     bankroll = st.number_input("Bankroll disponibile (€)", min_value=10.0, value=200.0, step=10.0)
     n_sim = st.select_slider(
         "Simulazioni Monte Carlo",
@@ -746,7 +807,7 @@ raw_input = st.text_area(
     height=320,
 )
 
-parsed = parse_pastone_oddsportal(raw_input)
+parsed = parse_pastone_oddsportal(raw_input, data_riferimento=data_riferimento)
 
 if st.button("Simula Match Singoli (Piano B)", type="primary"):
     if not raw_input.strip():
@@ -771,6 +832,7 @@ if st.button("Simula Match Singoli (Piano B)", type="primary"):
                     archivio_sackmann=archivio_sackmann,
                     bankroll=bankroll,
                     n_sim=n_sim,
+                    data_default=data_riferimento.isoformat(),
                 )
 
             st.divider()
