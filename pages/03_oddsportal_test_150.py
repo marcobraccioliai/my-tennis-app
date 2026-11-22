@@ -408,19 +408,22 @@ def _is_stato_o_punteggio(tok: str) -> bool:
     return False
 
 
-def _classifica_stato_match(marker: str) -> Tuple[str, str]:
-    """Restituisce (stato, motivo_esclusione): stato in {'NOT_STARTED', 'IN_PROGRESS', 'FINISHED'}."""
+def _classifica_stato_match(marker: str) -> Tuple[str, str, str]:
+    """
+    Restituisce (stato, categoria_breve, motivo_esclusione):
+    stato in {'NOT_STARTED', 'IN_PROGRESS', 'FINISHED'}.
+    """
     m = (marker or "").strip()
     low = m.lower()
     if not m or m == "-":
-        return "NOT_STARTED", ""
+        return "NOT_STARTED", "", ""
     if low in TERMINATED_TOKENS:
-        return "FINISHED", f"Match già terminato/chiuso (marcatore '{m}')"
+        return "FINISHED", "TERMINATA", f"Partita già terminata/chiusa (marcatore '{m}')"
     if low == "live" or re.fullmatch(r"(?:\d{1,2})?\d+S(?:T)?", m, re.IGNORECASE):
-        return "IN_PROGRESS", f"Match già iniziato o in corso (marcatore '{m}')"
+        return "IN_PROGRESS", "IN CORSO", f"Partita già iniziata o in corso (marcatore '{m}')"
     if re.fullmatch(r"(?:\d{1,2})?\d{2}:\d{2}", m):
-        return "NOT_STARTED", ""
-    return "NOT_STARTED", ""
+        return "NOT_STARTED", "", ""
+    return "NOT_STARTED", "", ""
 
 
 def _is_nome_giocatore(s: str) -> bool:
@@ -548,7 +551,7 @@ def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
                 j += 1
 
             is_dbl, dbl_reason = _verifica_doppio(current_tournament or "", current_subheader, g1, g2)
-            stato_match, stato_reason = _classifica_stato_match(last_marker_or_time)
+            stato_match, cat_breve, stato_reason = _classifica_stato_match(last_marker_or_time)
             terreno_effettivo = current_surface or "Cemento"
 
             if len(quotes) == 2:
@@ -569,6 +572,7 @@ def parse_pastone_oddsportal(raw_text: str) -> Dict[str, Any]:
                     started_or_finished_matches.append(
                         {
                             "rif": rif_pastone,
+                            "categoria": cat_breve,
                             "match": f"{g1} {sep} {g2} ({quotes[0]} / {quotes[1]})",
                             "torneo": current_tournament or "-",
                             "motivo": stato_reason,
@@ -640,7 +644,7 @@ def _render_scarti_courier_10pt(
     started_or_finished: List[Dict[str, str]],
     dirty: List[Dict[str, str]],
 ) -> str:
-    """Formatta doppi esclusi, match già iniziati/terminati e righe sporche in Courier 10pt in fondo."""
+    """Formatta doppi esclusi, match già terminati/in corso e righe sporche in Courier 10pt in fondo."""
     righe: List[str] = []
     righe.append("=== MATCH DI DOPPIO ESCLUSI ===")
     if doubles:
@@ -655,15 +659,16 @@ def _render_scarti_courier_10pt(
         righe.append("(nessun match di doppio escluso)")
 
     righe.append("")
-    righe.append("=== MATCH GIÀ INIZIATI / TERMINATI ESCLUSI ===")
+    righe.append("=== MATCH SCARTATI PERCHÉ GIÀ TERMINATI O IN CORSO ===")
     if started_or_finished:
         for s in started_or_finished:
+            cat = s.get("categoria", "TERMINATA / IN CORSO")
             righe.append(
-                f"[ESCLUSO] {s.get('rif', '')} | {s.get('match', '')} | "
+                f"[{cat}] {s.get('rif', '')} | {s.get('match', '')} | "
                 f"Torneo: {s.get('torneo', '-')} | {s.get('motivo', '')}"
             )
     else:
-        righe.append("(nessun match già iniziato o terminato escluso)")
+        righe.append("(nessun match terminato o in corso scartato)")
 
     righe.append("")
     righe.append("=== RIGHE / BLOCCHI SPORCHI SCARTATI ===")
@@ -722,7 +727,7 @@ if st.button("Simula Match Singoli (Piano B)", type="primary"):
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Singoli Simulati (Non Iniziati)", len(singles))
-        c2.metric("Iniziati / Terminati Esclusi", len(started_or_finished))
+        c2.metric("Terminati / In Corso Esclusi", len(started_or_finished))
         c3.metric("Match Doppio Esclusi", len(doubles))
         c4.metric("Righe / Blocchi Sporchi Scartati", len(dirty))
 
