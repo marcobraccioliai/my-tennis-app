@@ -335,23 +335,36 @@ def costruisci_tabella_simulazioni_singoli(
     )
 
 
-def filtra_value_favorito_150(df_sim: pd.DataFrame) -> pd.DataFrame:
+def filtra_edge_positivo_favorito_140(df_sim: pd.DataFrame) -> pd.DataFrame:
     """
-    Restituisce il sottoinsieme identico di righe in cui:
-    - Esito == 'VALUE BET'
-    - La quota del favorito del match (min tra Quota 1 e Quota 2) è >= 1.50
+    Restituisce il sottoinsieme di righe in cui:
+    - La simulazione trova un edge positivo (Edge > 0%, includendo VALUE BET e Stai fermo con edge > 0)
+    - La quota del favorito (min tra Quota 1 e Quota 2) è >= 1.40
+    Aggiunge all'estrema destra due colonne vuote: 'vincitore' e 'esito'.
     """
+    base_cols = list(df_sim.columns) if df_sim is not None else []
+    extra_cols = ["vincitore", "esito"]
+    all_cols = base_cols + [c for c in extra_cols if c not in base_cols]
+
     if df_sim is None or df_sim.empty:
-        return pd.DataFrame(columns=df_sim.columns if df_sim is not None else [])
+        return pd.DataFrame(columns=all_cols)
 
     q1 = pd.to_numeric(df_sim["Quota 1"], errors="coerce")
     q2 = pd.to_numeric(df_sim["Quota 2"], errors="coerce")
     quota_favorito = pd.concat([q1, q2], axis=1).min(axis=1)
 
-    cond_value = df_sim["Esito"] == "VALUE BET"
-    cond_fav_150 = quota_favorito >= 1.50
+    edge_num = pd.to_numeric(df_sim["Edge (%)"], errors="coerce")
+    esito_str = df_sim["Esito"].astype(str)
 
-    return df_sim[cond_value & cond_fav_150].copy().reset_index(drop=True)
+    cond_edge_pos = (edge_num > 0) | (
+        esito_str.isin(["VALUE BET", "Stai fermo (Edge < 5%)", "Stai fermo (< 1.00€)"])
+    )
+    cond_fav_140 = quota_favorito >= 1.40
+
+    filtered = df_sim[cond_edge_pos & cond_fav_140].copy().reset_index(drop=True)
+    filtered["vincitore"] = ""
+    filtered["esito"] = ""
+    return filtered[all_cols]
 
 
 # ==============================================================================
@@ -764,9 +777,9 @@ if st.button("Simula Match Singoli (Piano B)", type="primary"):
             st.subheader("🅱️ Tabella Risultati Simulazione Piano B (Singoli Non Iniziati · Ordine Pastone)")
             st.dataframe(df_sim, use_container_width=True, hide_index=True)
 
-            df_filtered = filtra_value_favorito_150(df_sim)
+            df_filtered = filtra_edge_positivo_favorito_140(df_sim)
             st.divider()
-            st.subheader("🎯 Sottoinsieme VALUE BET con Favorito ≥ 1.50")
+            st.subheader("🎯 Sottoinsieme Edge Positivo (> 0%) con Favorito ≥ 1.40")
             st.dataframe(df_filtered, use_container_width=True, hide_index=True)
         else:
             st.info("Nessun match singolo non ancora iniziato valido trovato da simulare.")
