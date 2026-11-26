@@ -12,10 +12,10 @@ import streamlit as st
 from bs4 import BeautifulSoup
 
 # ==============================================================================
-# CONFIGURAZIONE PAGINA E COSTANTI
+# CONFIGURAZIONE PAGINA
 # ==============================================================================
 st.set_page_config(
-    page_title="Check Risultati Tennis (9 Colonne)",
+    page_title="04 - Check Risultati Tennis (9 Colonne)",
     page_icon="🎾",
     layout="wide",
 )
@@ -38,368 +38,349 @@ HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept-Language": "en-US,en;q=0.9,it;q=0.8",
+    "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
-STATUS_KEYWORDS = {
-    "Annullata": ["cancelled", "canceled", "abandoned", "annullata", "void"],
-    "Posticipata": ["postponed", "posticipata", "rescheduled"],
-    "Rimandata": ["suspended", "interrupted", "delayed", "rimandata", "rain delay"],
+MULTI_WORD_SURNAMES = {
+    "dutra da silva",
+    "romero gormaz",
+    "herrero linana",
+    "martinez vaquero",
+    "carballes baena",
+    "bittoun kouzmine",
+    "de la pena",
+    "van de zandschulp",
+}
+
+STATUS_PATTERNS = {
+    "Annullata": [
+        r"\bcancel+ed\b",
+        r"\babandoned\b",
+        r"\bannullat[aoei]\b",
+        r"\bwalkover\b",
+        r"\bw/?o\b",
+        r"\bvoid\b",
+    ],
+    "Posticipata": [
+        r"\bpostponed\b",
+        r"\bposticipat[aoei]\b",
+        r"\brescheduled\b",
+    ],
+    "Rimandata": [
+        r"\bsuspended\b",
+        r"\binterrupted\b",
+        r"\bdelayed\b",
+        r"\brimandat[aoei]\b",
+        r"\brain\b",
+    ],
 }
 
 
 # ==============================================================================
-# FUNZIONI DI UTILITÀ PER NORMALIZZAZIONE NOMI E MATCHING
+# NORMALIZZAZIONE E LOGICA BASATA SUL COGNOME
 # ==============================================================================
-def strip_accents(text: str) -> str:
+def normalize_text(text: str) -> str:
     if not text:
         return ""
-    return "".join(
+    no_accents = "".join(
         c
-        for c in unicodedata.normalize("NFD", text)
+        for c in unicodedata.normalize("NFD", str(text))
         if unicodedata.category(c) != "Mn"
     )
+    lowered = no_accents.lower().replace("’", "'").replace("'", " ")
+    lowered = re.sub(r"[^a-z0-9\s\-]", " ", lowered)
+    return re.sub(r"\s+", " ", lowered).strip()
 
 
-def parse_player_tokens(player_label: str) -> Tuple[str, str]:
+def extract_surname(player_label: str) -> str:
     """
-    Estrae (cognome_normalizzato, iniziale_nome) da stringhe tipo:
-    - 'Perego G.' -> ('perego', 'g')
-    - 'Dutra Da Silva D.' -> ('dutra da silva', 'd')
-    - 'Giulio Perego' -> ('perego', 'g')
+    Estrae il cognome normalizzato da etichette tipo:
+    - 'Duran T.' -> 'duran'
+    - 'Dev S D P.' -> 'dev'
+    - 'Dutra Da Silva D.' -> 'dutra da silva'
+    - 'Tuncay Duran' -> 'duran'
     """
-    cleaned = strip_accents(str(player_label)).lower().strip()
-    cleaned = re.sub(r"[^a-z\s\.]", " ", cleaned)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    parts = cleaned.split(" ")
-    if not parts:
-        return "", ""
+    norm = normalize_text(player_label)
+    if not norm:
+        return ""
 
-    # Caso standard export OddsPortal: "Cognome N." oppure "Cognome N. M."
-    if len(parts) >= 2 and (len(parts[-1].replace(".", "")) == 1):
-        # Gestisce anche doppie iniziali finali tipo "Dev S D P."
-        idx = len(parts) - 1
-        while idx > 0 and len(parts[idx].replace(".", "")) == 1:
-            idx -= 1
-        surname = " ".join(parts[: idx + 1]).replace(".", "").strip()
-        initial = parts[idx + 1].replace(".", "")[:1]
-        return surname, initial
+    # Controlla cognomi composti noti
+    for comp in MULTI_WORD_SURNAMES:
+        if re.search(rf"\b{re.escape(comp)}\b", norm):
+            return comp
 
-    # Caso nome completo: "Nome Cognome"
-    if len(parts) >= 2:
-        initial = parts[0][:1]
-        surname = " ".join(parts[1:]).replace(".", "").strip()
-        return surname, initial
+    tokens = norm.split(" ")
+    # Rimuove eventuali iniziali singole (es. 't', 's', 'd', 'p', 'c', 'e')
+    non_initial = [t for t in tokens if len(t) > 1]
+    if non_initial:
+        # Nei formati 'Cognome N.' il primo token lungo è quasi sempre il cognome;
+        # nei formati 'Nome Cognome' l'ultimo token lungo è il cognome.
+        if len(tokens) >= 2 and len(tokens[-1]) == 1:
+            return non_initial[0]
+        return non_initial[-1]
 
-    return parts[0].replace(".", ""), ""
+    return tokens[0]
 
 
-def name_matches_text(player_label: str, text: str) -> bool:
-    """Verifica se un giocatore compare in modo plausibile in un testo/nome completo."""
-    surname, initial = parse_player_tokens(player_label)
-    if not surname or len(surname) < 3:
+def surname_in_text(surname: str, text: str) -> bool:
+    if not surname or len(surname) < 2:
         return False
-
-    norm_text = strip_accents(text).lower()
-    norm_text = re.sub(r"[^a-z\s]", " ", norm_text)
-    norm_text = re.sub(r"\s+", " ", norm_text)
-
-    if f" {surname} " not in f" {norm_text} ":
+    norm_txt = normalize_text(text)
+    if not norm_txt:
         return False
-
-    if initial:
-        # Controlla presenza dell'iniziale vicino al cognome (es. "giulio perego" o "perego g")
-        pattern = rf"\b({initial}[a-z]*\s+{re.escape(surname)}|{re.escape(surname)}\s+{initial}[a-z]*)\b"
-        if re.search(pattern, norm_text):
-            return True
-        # Fallback su cognome univoco lungo (>= 6 caratteri)
-        return len(surname) >= 6
-
-    return True
+    pattern = rf"(?<![a-z0-9]){re.escape(surname.replace('-', '[\\s\\-]?'))}(?![a-z0-9])"
+    return re.search(pattern, norm_txt) is not None
 
 
-def detect_match_status(text: str) -> Optional[str]:
-    norm = strip_accents(text).lower()
-    for label, keywords in STATUS_KEYWORDS.items():
-        for kw in keywords:
-            if re.search(rf"\b{re.escape(kw)}\b", norm):
-                return label
+def detect_status(text: str) -> Optional[str]:
+    norm_txt = normalize_text(text)
+    if not norm_txt:
+        return None
+    for status_label, patterns in STATUS_PATTERNS.items():
+        for pat in patterns:
+            if re.search(pat, norm_txt):
+                return status_label
     return None
 
 
-def infer_winner_from_snippet(
-    snippet: str, p1_label: str, p2_label: str
+def infer_winner_by_surname(
+    text: str, p1_label: str, p2_label: str
 ) -> Tuple[Optional[str], Optional[str]]:
     """
-    Analizza un estratto testuale/titolo per capire:
-    1) Se il match è stato annullato/posticipato/rimandato
-    2) Quale dei due giocatori ha vinto (senza estrarre il punteggio)
-    Restituisce (valore_vincitore, dettaglio_log).
+    Determina il vincitore (o stato Annullata/Posticipata/Rimandata) usando
+    esclusivamente il cognome dei due giocatori. Non restituisce mai punteggi.
     """
-    if not snippet:
+    if not text:
         return None, None
 
-    # 1. Controllo stati anomali
-    status = detect_match_status(snippet)
+    status = detect_status(text)
     if status:
-        return status, f"Stato rilevato: {status}"
+        return status, f"Stato: {status}"
 
-    norm = strip_accents(snippet).lower()
-    s1, i1 = parse_player_tokens(p1_label)
-    s2, i2 = parse_player_tokens(p2_label)
+    s1 = extract_surname(p1_label)
+    s2 = extract_surname(p2_label)
+    if not s1 or not s2:
+        return None, None
 
-    # Pattern espliciti di vittoria in inglese/italiano
-    win_patterns = [
-        r"\b([a-z\s\.\-]{3,35})\s+(?:def\.|defeats|defeated|beats|beat|batte|supera|wins against|vince contro)\s+([a-z\s\.\-]{3,35})\b",
-        r"\bwinner[:\s]+([a-z\s\.\-]{3,35})\b",
-        r"\bvincitore[:\s]+([a-z\s\.\-]{3,35})\b",
-    ]
+    has_s1 = surname_in_text(s1, text)
+    has_s2 = surname_in_text(s2, text)
+    if not (has_s1 and has_s2):
+        return None, None
 
-    for pat in win_patterns:
-        for m in re.finditer(pat, norm):
-            winner_chunk = m.group(1).strip()
-            if s1 and s1 in winner_chunk and (not s2 or s2 not in winner_chunk):
-                return p1_label, f"Match esplicito su '{winner_chunk}'"
-            if s2 and s2 in winner_chunk and (not s1 or s1 not in winner_chunk):
-                return p2_label, f"Match esplicito su '{winner_chunk}'"
+    norm_txt = normalize_text(text)
+    s1_pat = re.escape(s1.replace("-", " "))
+    s2_pat = re.escape(s2.replace("-", " "))
 
-    # Pattern punteggio tennis (es. "Faurel T. - Domingues J. 6-3, 6-1" o "2-0")
-    # Se compaiono entrambi i giocatori seguiti da un risultato netto a 2/3 set,
-    # si identifica il vincitore dal conteggio set senza salvare il punteggio.
-    score_match = re.search(
-        r"([a-z\s\.\-]{3,40})\s*(?:-|vs\.?|v)\s*([a-z\s\.\-]{3,40})[:\s]+(\d\s*[-:]\s*\d(?:\s*,\s*\d\s*[-:]\s*\d){1,2})",
-        norm,
+    # 1. Espressioni esplicite "VincitoreX batte/supera/defeats PerdenteY"
+    verb_pat = r"(?:def\.?|defeats?|defeated|beats?|beat|batte|supera|vince\s+su|wins\s+against|vince\s+contro)"
+    if re.search(rf"\b{s1_pat}\b[^\n\r]{{0,35}}\b{verb_pat}\b[^\n\r]{{0,35}}\b{s2_pat}\b", norm_txt):
+        return p1_label, f"Vittoria cognome '{s1}'"
+    if re.search(rf"\b{s2_pat}\b[^\n\r]{{0,35}}\b{verb_pat}\b[^\n\r]{{0,35}}\b{s1_pat}\b", norm_txt):
+        return p2_label, f"Vittoria cognome '{s2}'"
+
+    # 2. Espressioni tipo "Winner: Cognome" / "Vincitore: Cognome"
+    for m in re.finditer(r"\b(?:winner|vincitore)\s*[:\-]?\s*([a-z\s\-]{2,35})", norm_txt):
+        chunk = m.group(1)
+        m1 = surname_in_text(s1, chunk)
+        m2 = surname_in_text(s2, chunk)
+        if m1 and not m2:
+            return p1_label, f"Tag vincitore '{s1}'"
+        if m2 and not m1:
+            return p2_label, f"Tag vincitore '{s2}'"
+
+    # 3. Pattern tipo "Cognome1 vs Cognome2 ... 6-3 6-1" o "Cognome1 - Cognome2 2-0"
+    pair_score_pat = re.search(
+        rf"\b({s1_pat})\b\s*(?:vs\.?|v|-|–)\s*\b({s2_pat})\b[^\n\r]{{0,45}}?(\d\s*[-:]\s*\d(?:\s*,\s*\d\s*[-:]\s*\d|\s+\d\s*[-:]\s*\d){{0,2}})",
+        norm_txt,
     )
-    if score_match:
-        left_name = score_match.group(1)
-        right_name = score_match.group(2)
-        raw_sets = score_match.group(3)
-        sets = re.findall(r"(\d)\s*[-:]\s*(\d)", raw_sets)
-        if len(sets) >= 2:
-            left_wins = sum(1 for a, b in sets if int(a) > int(b))
-            right_wins = sum(1 for a, b in sets if int(b) > int(a))
-            if left_wins != right_wins:
-                winner_side = left_name if left_wins > right_wins else right_name
-                if s1 and s1 in winner_side and (not s2 or s2 not in winner_side):
-                    return p1_label, "Dedotto da esito tabellino"
-                if s2 and s2 in winner_side and (not s1 or s1 not in winner_side):
-                    return p2_label, "Dedotto da esito tabellino"
+    if pair_score_pat:
+        sets = re.findall(r"(\d)\s*[-:]\s*(\d)", pair_score_pat.group(3))
+        if sets:
+            w1 = sum(1 for a, b in sets if int(a) > int(b))
+            w2 = sum(1 for a, b in sets if int(b) > int(a))
+            if w1 > w2:
+                return p1_label, f"Set vinti da '{s1}'"
+            if w2 > w1:
+                return p2_label, f"Set vinti da '{s2}'"
 
     return None, None
 
 
 # ==============================================================================
-# CATENA DI FALLBACK MULTI-SORGENTE
+# MOTORI DI RICERCA E CATENA DI FALLBACK
 # ==============================================================================
-def source_1_sofascore_api(
-    session: requests.Session, date_str: str, p1: str, p2: str
-) -> Tuple[Optional[str], str]:
+def fetch_search_results(
+    session: requests.Session, query: str, max_results: int = 8
+) -> List[str]:
     """
-    Sorgente 1: API pubblica eventi tennis Sofascore per data (YYYY-MM-DD).
-    Molto veloce e strutturata per ATP, WTA, Challenger e molti ITF.
+    Esegue una ricerca web su DuckDuckGo HTML con fallback su Bing
+    e restituisce una lista di testi (titolo + URL + snippet) da analizzare.
     """
-    try:
-        # Controlla la data del match e il giorno successivo (per fusi orari)
-        base_dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
-        dates_to_check = [
-            base_dt.strftime("%Y-%m-%d"),
-            (base_dt + timedelta(days=1)).strftime("%Y-%m-%d"),
-        ]
+    texts: List[str] = []
 
-        for d in dates_to_check:
+    # Tentativo su DuckDuckGo HTML
+    try:
+        ddg_url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
+        resp = session.get(ddg_url, headers=HEADERS, timeout=12)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for res in soup.select(".result")[:max_results]:
+                title = res.select_one(".result__title")
+                snippet = res.select_one(".result__snippet")
+                link = res.select_one(".result__url")
+                chunk = " | ".join(
+                    part.get_text(" ", strip=True)
+                    for part in [title, link, snippet]
+                    if part is not None
+                )
+                if chunk:
+                    texts.append(chunk)
+    except Exception:
+        pass
+
+    if texts:
+        return texts
+
+    # Fallback su Bing HTML
+    try:
+        bing_url = f"https://www.bing.com/search?q={quote_plus(query)}"
+        resp = session.get(bing_url, headers=HEADERS, timeout=12)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for item in soup.select("li.b_algo")[:max_results]:
+                txt = item.get_text(" ", strip=True)
+                if txt:
+                    texts.append(txt)
+    except Exception:
+        pass
+
+    return texts
+
+
+def fallback_1_tennistonic(
+    session: requests.Session, s1: str, s2: str, date_str: str, p1: str, p2: str
+) -> Tuple[Optional[str], str]:
+    query = f'site:tennistonic.com "{s1}" "{s2}"'
+    snippets = fetch_search_results(session, query)
+    for snip in snippets:
+        winner, reason = infer_winner_by_surname(snip, p1, p2)
+        if winner:
+            return winner, f"TennisTonic ({reason})"
+    return None, "TennisTonic: nessun riscontro"
+
+
+def fallback_2_aiscore(
+    session: requests.Session, s1: str, s2: str, date_str: str, p1: str, p2: str
+) -> Tuple[Optional[str], str]:
+    query = f'site:aiscore.com "{s1}" "{s2}" tennis'
+    snippets = fetch_search_results(session, query)
+    for snip in snippets:
+        winner, reason = infer_winner_by_surname(snip, p1, p2)
+        if winner:
+            return winner, f"AiScore ({reason})"
+    return None, "AiScore: nessun riscontro"
+
+
+def fallback_3_livescore(
+    session: requests.Session, s1: str, s2: str, date_str: str, p1: str, p2: str
+) -> Tuple[Optional[str], str]:
+    query = f'site:livescore.com "{s1}" "{s2}" tennis'
+    snippets = fetch_search_results(session, query)
+    for snip in snippets:
+        winner, reason = infer_winner_by_surname(snip, p1, p2)
+        if winner:
+            return winner, f"LiveScore ({reason})"
+    return None, "LiveScore: nessun riscontro"
+
+
+def fallback_4_general_web(
+    session: requests.Session, s1: str, s2: str, date_str: str, p1: str, p2: str
+) -> Tuple[Optional[str], str]:
+    queries = [
+        f'"{s1}" "{s2}" tennis {date_str[:10]}',
+        f'"{s1}" vs "{s2}" tennis result',
+    ]
+    for q in queries:
+        snippets = fetch_search_results(session, q)
+        for snip in snippets:
+            winner, reason = infer_winner_by_surname(snip, p1, p2)
+            if winner:
+                return winner, f"Web Search ({reason})"
+    return None, "Web Search: nessun riscontro"
+
+
+def fallback_5_sofascore_api(
+    session: requests.Session, s1: str, s2: str, date_str: str, p1: str, p2: str
+) -> Tuple[Optional[str], str]:
+    try:
+        base_dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
+        for offset in (0, 1, -1):
+            d = (base_dt + timedelta(days=offset)).strftime("%Y-%m-%d")
             url = f"https://api.sofascore.com/api/v1/sport/tennis/scheduled-events/{d}"
             resp = session.get(url, headers=HEADERS, timeout=10)
             if resp.status_code != 200:
                 continue
-
-            events = resp.json().get("events", [])
-            for ev in events:
-                home_name = ev.get("homeTeam", {}).get("name", "")
-                away_name = ev.get("awayTeam", {}).get("name", "")
-
-                p1_is_home = name_matches_text(p1, home_name) and name_matches_text(p2, away_name)
-                p2_is_home = name_matches_text(p2, home_name) and name_matches_text(p1, away_name)
-
-                if not (p1_is_home or p2_is_home):
+            for ev in resp.json().get("events", []):
+                home = ev.get("homeTeam", {}).get("name", "")
+                away = ev.get("awayTeam", {}).get("name", "")
+                p1_home = surname_in_text(s1, home) and surname_in_text(s2, away)
+                p2_home = surname_in_text(s2, home) and surname_in_text(s1, away)
+                if not (p1_home or p2_home):
                     continue
 
-                status_type = str(ev.get("status", {}).get("type", "")).lower()
-                status_desc = str(ev.get("status", {}).get("description", "")).lower()
-
-                if status_type in {"canceled", "cancelled"} or "cancel" in status_desc:
+                st_type = str(ev.get("status", {}).get("type", "")).lower()
+                st_desc = str(ev.get("status", {}).get("description", "")).lower()
+                if "cancel" in st_type or "cancel" in st_desc:
                     return "Annullata", "Sofascore API (Annullata)"
-                if status_type == "postponed" or "postpon" in status_desc:
+                if "postpon" in st_type or "postpon" in st_desc:
                     return "Posticipata", "Sofascore API (Posticipata)"
-                if status_type in {"interrupted", "suspended"} or "suspend" in status_desc:
+                if "interrupt" in st_type or "suspend" in st_type or "delay" in st_desc:
                     return "Rimandata", "Sofascore API (Rimandata)"
 
-                winner_code = ev.get("winnerCode")  # 1 = homeTeam, 2 = awayTeam
-                if winner_code in (1, 2):
-                    if p1_is_home:
-                        winner = p1 if winner_code == 1 else p2
-                    else:
-                        winner = p2 if winner_code == 1 else p1
-                    return winner, f"Sofascore API ({d})"
-
-        return None, "Sofascore API: match non trovato o non concluso"
+                w_code = ev.get("winnerCode")
+                if w_code in (1, 2):
+                    if p1_home:
+                        return (p1 if w_code == 1 else p2), f"Sofascore API ({d})"
+                    return (p2 if w_code == 1 else p1), f"Sofascore API ({d})"
     except Exception as exc:
-        return None, f"Sofascore API errore: {exc}"
+        return None, f"Sofascore API err: {exc}"
+    return None, "Sofascore API: nessun riscontro"
 
 
-def source_2_thesportsdb_api(
-    session: requests.Session, date_str: str, p1: str, p2: str
-) -> Tuple[Optional[str], str]:
-    """
-    Sorgente 2 (Fallback 1): TheSportsDB endpoint gratuito eventi del giorno (Tennis).
-    """
-    try:
-        url = f"https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d={date_str[:10]}&s=Tennis"
-        resp = session.get(url, headers=HEADERS, timeout=10)
-        if resp.status_code != 200:
-            return None, f"TheSportsDB HTTP {resp.status_code}"
-
-        events = resp.json().get("events") or []
-        for ev in events:
-            home_name = ev.get("strHomeTeam") or ""
-            away_name = ev.get("strAwayTeam") or ""
-            event_title = ev.get("strEvent") or ""
-            status_str = ev.get("strStatus") or ""
-
-            match_found = (
-                (name_matches_text(p1, home_name) and name_matches_text(p2, away_name))
-                or (name_matches_text(p2, home_name) and name_matches_text(p1, away_name))
-                or (name_matches_text(p1, event_title) and name_matches_text(p2, event_title))
-            )
-            if not match_found:
-                continue
-
-            status_detected = detect_match_status(status_str)
-            if status_detected:
-                return status_detected, f"TheSportsDB ({status_detected})"
-
-            h_score = ev.get("intHomeScore")
-            a_score = ev.get("intAwayScore")
-            if h_score is not None and a_score is not None:
-                try:
-                    hs, as_ = int(h_score), int(a_score)
-                    if hs != as_:
-                        p1_is_home = name_matches_text(p1, home_name)
-                        if p1_is_home:
-                            winner = p1 if hs > as_ else p2
-                        else:
-                            winner = p2 if hs > as_ else p1
-                        return winner, "TheSportsDB API"
-                except ValueError:
-                    pass
-
-        return None, "TheSportsDB: nessun riscontro"
-    except Exception as exc:
-        return None, f"TheSportsDB errore: {exc}"
-
-
-def source_3_duckduckgo_html(
-    session: requests.Session, date_str: str, p1: str, p2: str
-) -> Tuple[Optional[str], str]:
-    """
-    Sorgente 3 (Fallback 2): Ricerca web HTML su DuckDuckGo Lite/HTML
-    mirata su siti tennis (TennisExplorer, Flashscore, Sofascore, ITF/ATP/WTA).
-    """
-    try:
-        s1, _ = parse_player_tokens(p1)
-        s2, _ = parse_player_tokens(p2)
-        query = f'"{s1}" "{s2}" tennis {date_str[:10]} winner OR result OR postponed OR cancelled'
-        url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
-        resp = session.get(url, headers=HEADERS, timeout=12)
-        if resp.status_code != 200:
-            return None, f"Web Search 1 HTTP {resp.status_code}"
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-        results = soup.select(".result")
-        for res in results[:8]:
-            title_el = res.select_one(".result__title")
-            snippet_el = res.select_one(".result__snippet")
-            combined = " ".join(
-                [
-                    title_el.get_text(" ", strip=True) if title_el else "",
-                    snippet_el.get_text(" ", strip=True) if snippet_el else "",
-                ]
-            )
-            if not (name_matches_text(p1, combined) and name_matches_text(p2, combined)):
-                continue
-
-            winner, detail = infer_winner_from_snippet(combined, p1, p2)
-            if winner:
-                return winner, f"DuckDuckGo Web ({detail})"
-
-        return None, "DuckDuckGo Web: esito non chiaro negli snippet"
-    except Exception as exc:
-        return None, f"DuckDuckGo Web errore: {exc}"
-
-
-def source_4_bing_web_fallback(
-    session: requests.Session, date_str: str, p1: str, p2: str
-) -> Tuple[Optional[str], str]:
-    """
-    Sorgente 4 (Fallback 3): Ricerca web alternativa su Bing (utile per ITF/Challenger minori).
-    """
-    try:
-        s1, _ = parse_player_tokens(p1)
-        s2, _ = parse_player_tokens(p2)
-        query = f'{s1} vs {s2} tennis {date_str[:10]}'
-        url = f"https://www.bing.com/search?q={quote_plus(query)}"
-        resp = session.get(url, headers=HEADERS, timeout=12)
-        if resp.status_code != 200:
-            return None, f"Web Search 2 HTTP {resp.status_code}"
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-        for item in soup.select("li.b_algo")[:8]:
-            text = item.get_text(" ", strip=True)
-            if not (name_matches_text(p1, text) and name_matches_text(p2, text)):
-                continue
-
-            winner, detail = infer_winner_from_snippet(text, p1, p2)
-            if winner:
-                return winner, f"Bing Web ({detail})"
-
-        return None, "Bing Web: nessun risultato univoco"
-    except Exception as exc:
-        return None, f"Bing Web errore: {exc}"
-
-
-def resolve_match_with_fallback(
+def resolve_match_winner(
     session: requests.Session,
     date_str: str,
     p1: str,
     p2: str,
-    enabled_sources: List[str],
-    delay_sec: float = 0.6,
+    active_steps: List[str],
+    delay: float,
 ) -> Tuple[str, str]:
-    """
-    Esegue la catena di fallback in ordine finché una sorgente non restituisce
-    un vincitore valido o uno stato (Annullata/Posticipata/Rimandata).
-    """
-    pipeline = [
-        ("1. Sofascore API", source_1_sofascore_api),
-        ("2. TheSportsDB API", source_2_thesportsdb_api),
-        ("3. Web Search (DuckDuckGo)", source_3_duckduckgo_html),
-        ("4. Web Search Fallback (Bing)", source_4_bing_web_fallback),
-    ]
+    s1 = extract_surname(p1)
+    s2 = extract_surname(p2)
 
-    logs: List[str] = []
-    for source_label, fn in pipeline:
-        if source_label not in enabled_sources:
+    steps_map = {
+        "1. TennisTonic": fallback_1_tennistonic,
+        "2. AiScore": fallback_2_aiscore,
+        "3. LiveScore": fallback_3_livescore,
+        "4. Web Search Generica": fallback_4_general_web,
+        "5. Sofascore API": fallback_5_sofascore_api,
+    }
+
+    trace_items: List[str] = []
+    for step_name, fn in steps_map.items():
+        if step_name not in active_steps:
             continue
-        winner, info = fn(session, date_str, p1, p2)
-        logs.append(f"{source_label} -> {info}")
+        winner, msg = fn(session, s1, s2, date_str, p1, p2)
+        trace_items.append(f"{step_name}: {msg}")
         if winner:
-            return winner, " | ".join(logs)
-        time.sleep(delay_sec)
+            return winner, " -> ".join(trace_items)
+        time.sleep(delay)
 
-    return "", " | ".join(logs) if logs else "Nessuna sorgente selezionata"
+    return "", " -> ".join(trace_items) if trace_items else "Nessuna fonte attiva"
 
 
 # ==============================================================================
-# NORMALIZZAZIONE DEL CSV DI INPUT NEL FORMATO A 9 COLONNE
+# COSTRUZIONE TABELLA A 9 COLONNE
 # ==============================================================================
 def format_odds(val) -> str:
     if pd.isna(val) or str(val).strip() == "":
@@ -410,76 +391,57 @@ def format_odds(val) -> str:
         return str(val).strip()
 
 
-def build_reduced_dataframe(raw_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Estrae esattamente le 9 colonne richieste, preservando l'ordine delle righe,
-    e garantendo che 'Esito' sia sempre completamente vuota ('').
-    """
-    col_map: Dict[str, str] = {c.strip().lower(): c for c in raw_df.columns}
+def to_nine_columns(raw_df: pd.DataFrame) -> pd.DataFrame:
+    col_lookup: Dict[str, str] = {c.strip().lower(): c for c in raw_df.columns}
 
-    def get_col(name: str) -> pd.Series:
+    def col_series(name: str) -> pd.Series:
         key = name.lower()
-        if key in col_map:
-            return raw_df[col_map[key]]
+        if key in col_lookup:
+            return raw_df[col_lookup[key]]
         return pd.Series([""] * len(raw_df))
 
-    reduced = pd.DataFrame(
+    df_9 = pd.DataFrame(
         {
-            "Data": get_col("Data").fillna("").astype(str).str.strip(),
-            "Giocatore 1": get_col("Giocatore 1").fillna("").astype(str).str.strip(),
-            "Quota 1": get_col("Quota 1").apply(format_odds),
-            "Giocatore 2": get_col("Giocatore 2").fillna("").astype(str).str.strip(),
-            "Quota 2": get_col("Quota 2").apply(format_odds),
-            "Miglior Lato": get_col("Miglior Lato").fillna("").astype(str).str.strip(),
-            "Quota Scelta": get_col("Quota Scelta").apply(format_odds),
-            "Vincitore": get_col("Vincitore").fillna("").astype(str).str.strip(),
-            # REGOLA INDEROGABILE: la colonna Esito deve sempre restare vuota
+            "Data": col_series("Data").fillna("").astype(str).str.strip(),
+            "Giocatore 1": col_series("Giocatore 1").fillna("").astype(str).str.strip(),
+            "Quota 1": col_series("Quota 1").apply(format_odds),
+            "Giocatore 2": col_series("Giocatore 2").fillna("").astype(str).str.strip(),
+            "Quota 2": col_series("Quota 2").apply(format_odds),
+            "Miglior Lato": col_series("Miglior Lato").fillna("").astype(str).str.strip(),
+            "Quota Scelta": col_series("Quota Scelta").apply(format_odds),
+            "Vincitore": col_series("Vincitore").fillna("").astype(str).str.strip(),
+            # Vincolo assoluto: la colonna Esito resta sempre completamente vuota
             "Esito": [""] * len(raw_df),
         }
     )
-
-    return reduced[TARGET_COLUMNS]
+    return df_9[TARGET_COLUMNS]
 
 
 # ==============================================================================
-# INTERFACCIA UTENTE STREAMLIT
+# INTERFACCIA STREAMLIT
 # ==============================================================================
-st.title("🎾 Check Risultati & Tabella Ridotta (9 Colonne)")
-st.markdown(
-    "Carica il file `.csv` esportato da **`03_oddsportal_test_150.py`**. "
-    "L'app estrae le **9 colonne standard**, cerca in rete chi ha vinto (o se il match è stato "
-    "**annullato / posticipato / rimandato**) tramite catena di fallback multi-sorgente, "
-    "compila **solo `Vincitore`** e lascia **`Esito` sempre vuota**."
+st.title("🎾 04 - Check Risultati Tennis (Tabella 9 Colonne)")
+st.caption(
+    "Matching basato sul **cognome** con catena di fallback multi-sorgente. "
+    "Compila solo **Vincitore** (o stato Annullata/Posticipata/Rimandata) e lascia **Esito sempre vuota**."
 )
 
 with st.sidebar:
-    st.header("⚙️ Impostazioni Ricerca")
-    selected_sources = st.multiselect(
-        "Catena di fallback attiva (in ordine):",
-        options=[
-            "1. Sofascore API",
-            "2. TheSportsDB API",
-            "3. Web Search (DuckDuckGo)",
-            "4. Web Search Fallback (Bing)",
-        ],
-        default=[
-            "1. Sofascore API",
-            "2. TheSportsDB API",
-            "3. Web Search (DuckDuckGo)",
-            "4. Web Search Fallback (Bing)",
-        ],
+    st.header("Catena di Fallback")
+    all_steps = [
+        "1. TennisTonic",
+        "2. AiScore",
+        "3. LiveScore",
+        "4. Web Search Generica",
+        "5. Sofascore API",
+    ]
+    selected_steps = st.multiselect(
+        "Ordine di consultazione:",
+        options=all_steps,
+        default=all_steps,
     )
-    request_delay = st.slider(
-        "Pausa tra richieste di fallback (sec)",
-        min_value=0.2,
-        max_value=2.5,
-        value=0.6,
-        step=0.1,
-    )
-    skip_already_filled = st.checkbox(
-        "Salta righe dove 'Vincitore' è già compilato",
-        value=True,
-    )
+    pause_sec = st.slider("Pausa tra tentativi (sec)", 0.2, 2.0, 0.5, 0.1)
+    only_missing = st.checkbox("Cerca solo dove 'Vincitore' è vuoto", value=True)
 
 uploaded_file = st.file_uploader(
     "Carica il file CSV generato da 03_oddsportal_test_150.py",
@@ -487,84 +449,77 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is not None:
-    file_signature = f"{uploaded_file.name}_{uploaded_file.size}"
+    sig = f"{uploaded_file.name}_{uploaded_file.size}"
+    if st.session_state.get("upload_sig") != sig:
+        raw = pd.read_csv(uploaded_file)
+        st.session_state["table_9"] = to_nine_columns(raw)
+        st.session_state["run_logs"] = []
+        st.session_state["upload_sig"] = sig
 
-    if st.session_state.get("last_file_sig") != file_signature:
-        raw_df = pd.read_csv(uploaded_file)
-        st.session_state["reduced_df"] = build_reduced_dataframe(raw_df)
-        st.session_state["search_logs"] = []
-        st.session_state["last_file_sig"] = file_signature
+    working_df = st.session_state["table_9"].copy()
 
-    df_work: pd.DataFrame = st.session_state["reduced_df"].copy()
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Match totali", len(working_df))
+    m2.metric("Vincitore compilato", int((working_df["Vincitore"].str.strip() != "").sum()))
+    m3.metric("Da compilare", int((working_df["Vincitore"].str.strip() == "").sum()))
 
-    col_info1, col_info2, col_info3 = st.columns(3)
-    col_info1.metric("Match caricati", len(df_work))
-    col_info2.metric(
-        "Vincitore compilato",
-        int((df_work["Vincitore"].astype(str).str.strip() != "").sum()),
-    )
-    col_info3.metric(
-        "Da verificare",
-        int((df_work["Vincitore"].astype(str).str.strip() == "").sum()),
-    )
+    if st.button("🚀 Avvia Ricerca Vincitori", type="primary"):
+        prog = st.progress(0)
+        status_txt = st.empty()
+        logs: List[Dict[str, str]] = []
 
-    if st.button("🔍 Cerca Vincitori in Rete (con Fallback)", type="primary"):
-        progress_bar = st.progress(0)
-        status_box = st.empty()
-        logs_collected: List[Dict[str, str]] = []
+        with requests.Session() as sess:
+            n_rows = len(working_df)
+            for i, row in working_df.iterrows():
+                p1 = row["Giocatore 1"]
+                p2 = row["Giocatore 2"]
+                dt_str = row["Data"]
+                cur_win = row["Vincitore"].strip()
 
-        with requests.Session() as session:
-            total = len(df_work)
-            for idx, row in df_work.iterrows():
-                p1 = str(row["Giocatore 1"]).strip()
-                p2 = str(row["Giocatore 2"]).strip()
-                date_str = str(row["Data"]).strip()
-                current_winner = str(row["Vincitore"]).strip()
-
-                if skip_already_filled and current_winner:
-                    logs_collected.append(
+                if only_missing and cur_win:
+                    logs.append(
                         {
                             "Match": f"{p1} vs {p2}",
-                            "Esito Ricerca": current_winner,
-                            "Dettaglio Fallback": "Già compilato (saltato)",
+                            "Cognomi": f"{extract_surname(p1)} / {extract_surname(p2)}",
+                            "Vincitore": cur_win,
+                            "Log": "Già presente",
                         }
                     )
-                    progress_bar.progress((idx + 1) / total)
+                    prog.progress((i + 1) / n_rows)
                     continue
 
-                status_box.info(f"Ricerca ({idx + 1}/{total}): **{p1}** vs **{p2}** ({date_str})...")
-                winner_found, trace = resolve_match_with_fallback(
-                    session=session,
-                    date_str=date_str,
+                status_txt.info(f"({i + 1}/{n_rows}) {p1} vs {p2} ({dt_str})...")
+                found_winner, trace = resolve_match_winner(
+                    session=sess,
+                    date_str=dt_str,
                     p1=p1,
                     p2=p2,
-                    enabled_sources=selected_sources,
-                    delay_sec=request_delay,
+                    active_steps=selected_steps,
+                    delay=pause_sec,
                 )
 
-                if winner_found:
-                    df_work.at[idx, "Vincitore"] = winner_found
+                if found_winner:
+                    working_df.at[i, "Vincitore"] = found_winner
+                working_df.at[i, "Esito"] = ""
 
-                # Forza sempre Esito vuota
-                df_work.at[idx, "Esito"] = ""
-
-                logs_collected.append(
+                logs.append(
                     {
                         "Match": f"{p1} vs {p2}",
-                        "Esito Ricerca": winner_found if winner_found else "NON TROVATO",
-                        "Dettaglio Fallback": trace,
+                        "Cognomi": f"{extract_surname(p1)} / {extract_surname(p2)}",
+                        "Vincitore": found_winner if found_winner else "-",
+                        "Log": trace,
                     }
                 )
-                progress_bar.progress((idx + 1) / total)
+                prog.progress((i + 1) / n_rows)
 
-        status_box.success("Ricerca completata su tutto l'elenco!")
-        st.session_state["reduced_df"] = df_work
-        st.session_state["search_logs"] = logs_collected
+        status_txt.success("Ricerca completata.")
+        st.session_state["table_9"] = working_df
+        st.session_state["run_logs"] = logs
         st.rerun()
 
-    st.subheader("📋 Tabella Ridotta a 9 Colonne (modificabile su 'Vincitore')")
-    edited_df = st.data_editor(
-        st.session_state["reduced_df"],
+    st.subheader("Tabella a 9 Colonne")
+    edited = st.data_editor(
+        st.session_state["table_9"],
         use_container_width=True,
         hide_index=True,
         disabled=[
@@ -579,41 +534,37 @@ if uploaded_file is not None:
         ],
     )
 
-    # Garantisce in ogni caso l'ordine a 9 colonne e 'Esito' sempre vuota
-    final_df = edited_df[TARGET_COLUMNS].copy()
-    final_df["Vincitore"] = final_df["Vincitore"].fillna("").astype(str).str.strip()
-    final_df["Esito"] = ""
-    st.session_state["reduced_df"] = final_df
+    clean_df = edited[TARGET_COLUMNS].copy()
+    clean_df["Vincitore"] = clean_df["Vincitore"].fillna("").astype(str).str.strip()
+    clean_df["Esito"] = ""
+    st.session_state["table_9"] = clean_df
 
-    if st.session_state.get("search_logs"):
-        with st.expander("🔎 Log dettagliato della catena di fallback", expanded=False):
+    if st.session_state.get("run_logs"):
+        with st.expander("Dettaglio fallback per riga"):
             st.dataframe(
-                pd.DataFrame(st.session_state["search_logs"]),
+                pd.DataFrame(st.session_state["run_logs"]),
                 use_container_width=True,
                 hide_index=True,
             )
 
-    # ==========================================================================
-    # OUTPUT: DOWNLOAD CSV + BLOCCO COPIA E INCOLLA
-    # ==========================================================================
     st.divider()
-    st.subheader("📤 Esportazione Dati")
+    st.subheader("Output: Download CSV e Copia-Incolla")
 
-    csv_buffer = io.StringIO()
-    final_df.to_csv(csv_buffer, index=False)
-    csv_text = csv_buffer.getvalue()
+    buf = io.StringIO()
+    clean_df.to_csv(buf, index=False)
+    csv_output = buf.getvalue()
 
-    unique_dates = [d for d in final_df["Data"].unique() if d]
-    date_tag = unique_dates[0] if len(unique_dates) == 1 else datetime.now().strftime("%Y-%m-%d")
-    out_filename = f"{date_tag}_tabella_ridotta_vincitori.csv"
+    dates_present = [d for d in clean_df["Data"].unique() if d]
+    file_date = dates_present[0] if len(dates_present) == 1 else datetime.now().strftime("%Y-%m-%d")
+    download_name = f"{file_date}_tabella_9_colonne_vincitori.csv"
 
     st.download_button(
-        label=f"⬇️ Scarica CSV ({out_filename})",
-        data=csv_text.encode("utf-8"),
-        file_name=out_filename,
+        label=f"⬇️ Scarica {download_name}",
+        data=csv_output.encode("utf-8"),
+        file_name=download_name,
         mime="text/csv",
         type="primary",
     )
 
-    st.markdown("**Blocco CSV per il copia e incolla:**")
-    st.code(csv_text, language="csv")
+    st.markdown("**Blocco CSV da copiare e incollare:**")
+    st.code(csv_output, language="csv")
