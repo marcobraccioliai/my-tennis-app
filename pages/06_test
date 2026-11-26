@@ -1,0 +1,33 @@
+import requests
+
+# La data nel formato YYYY-MM-DD
+data_match = "2026-11-24"
+url = f"https://sofascore.com{data_match}"
+
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
+response = requests.get(url, headers=headers)
+
+if response.status_code == 200:
+    eventi = response.json().get("events", [])
+    
+    for evento in eventi:
+        giocatore_1 = evento["homeTeam"]["name"]
+        giocatore_2 = evento["awayTeam"]["name"]
+        
+        if "Hercog" in giocatore_1 or "Costoulas" in giocatore_2:
+            torneo = evento["tournament"]["name"]
+            stato = evento["status"]["description"] # Es. "Retired", "Ended"
+            
+            # Estrazione punteggio dei set
+            punteggio_g1 = [evento["homeScore"].get(f"period{i}") for i in range(1, 4) if f"period{i}" in evento["homeScore"]]
+            punteggio_g2 = [evento["awayScore"].get(f"period{i}") for i in range(1, 4) if f"period{i}" in evento["awayScore"]]
+            
+            print(f"Torneo: {torneo}")
+            print(f"{giocatore_1} vs {giocatore_2}")
+            print(f"Punteggio set: {list(zip(punteggio_g1, punteggio_g2))}")
+            print(f"Esito: {stato}")
+else:
+    print(f"Accesso bloccato o errore HTTP: {response.status_code}")
